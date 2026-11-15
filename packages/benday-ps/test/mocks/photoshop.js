@@ -182,6 +182,7 @@ function createMockPhotoshopEnv(options = {}) {
       bitsPerChannel,
       componentChannels,
       activeChannels: componentChannels,
+      xmpMetadata: options.initialXmp || '',
       layers: initialLayers,
       async duplicate() {
         // Exact Adobe Photoshop v27.5+ UXP DOM regression error string!
@@ -269,6 +270,59 @@ function createMockPhotoshopEnv(options = {}) {
                 : currentActiveDoc;
             results.push({ title: d ? d.name : undefined });
             continue;
+          }
+          if (propTarget._property === 'XMPMetadataAsUTF8') {
+            const d =
+              typeof objTarget._id === 'number'
+                ? app.documents.find((doc) => getInternalId(doc) === objTarget._id)
+                : currentActiveDoc;
+            results.push({ XMPMetadataAsUTF8: d && d.xmpMetadata ? d.xmpMetadata : '' });
+            continue;
+          }
+          if (propTarget._property === 'generatorSettings') {
+            let lyr = null;
+            if (currentActiveDoc && currentActiveDoc.layers) {
+              if (objTarget._ref === 'layer' && (objTarget._id != null || objTarget._name != null)) {
+                lyr = findLayerByIdOrName(currentActiveDoc.layers, objTarget);
+              } else {
+                lyr = findLayerByIdOrName(currentActiveDoc.layers, { _id: currentTargetLayerId });
+              }
+            }
+            results.push({
+              generatorSettings: lyr && lyr.generatorSettings ? { ...lyr.generatorSettings } : {},
+            });
+            continue;
+          }
+          results.push({});
+          continue;
+        }
+
+        if (
+          desc._obj === 'set' &&
+          Array.isArray(desc._target) &&
+          desc._target[0] &&
+          desc._target[0]._property === 'XMPMetadataAsUTF8'
+        ) {
+          if (currentActiveDoc && desc.to && typeof desc.to.XMPMetadataAsUTF8 === 'string') {
+            currentActiveDoc.xmpMetadata = desc.to.XMPMetadataAsUTF8;
+          }
+          results.push({});
+          continue;
+        }
+
+        if (
+          desc._obj === 'set' &&
+          Array.isArray(desc._target) &&
+          desc._target[0] &&
+          desc._target[0]._property === 'generatorSettings'
+        ) {
+          if (currentActiveDoc && currentActiveDoc.layers && desc.to) {
+            const targetLayer = findLayerByIdOrName(currentActiveDoc.layers, {
+              _id: currentTargetLayerId,
+            });
+            if (targetLayer) {
+              targetLayer.generatorSettings = { ...(targetLayer.generatorSettings || {}), ...desc.to };
+            }
           }
           results.push({});
           continue;

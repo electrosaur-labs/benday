@@ -438,4 +438,169 @@ describe('benday-cli & Baseline TIFF / PGM Codec', () => {
     expect(report.ok).toBe(false);
     expect(report.minDotViolations).toBe(1);
   });
+
+  it('supports v0.2 --save-config, --config precedence (defaults < --config < CLI flags), --dot-gain, --bvg/--no-bvg, --rosette-preset, and HVS telemetry', () => {
+    const dir = makeTempDir();
+    const cfgPath = path.join(dir, 'press.benday.json');
+    const outNoDg = path.join(dir, 'out_nodg.tif');
+    const outDg = path.join(dir, 'out_dg.tif');
+
+    // 1. Save config via `benday spec --save-config`
+    const specLogs = [];
+    const specRes = runCli(
+      [
+        'spec',
+        '--mesh',
+        '305',
+        '--thread',
+        '34',
+        '--n',
+        '4.5',
+        '--dpi',
+        '600',
+        '--dot-gain',
+        '14',
+        '--bvg',
+        '--rosette-preset',
+        'fta',
+        '--save-config',
+        cfgPath,
+        '--json',
+      ],
+      { stdout: (s) => specLogs.push(s), stderr: () => {} }
+    );
+    expect(specRes.exitCode).toBe(0);
+    expect(fs.existsSync(cfgPath)).toBe(true);
+    const specJson = JSON.parse(specLogs.join('\n'));
+    expect(specJson.rosettePreset).toBe('fta');
+    expect(specJson.angles).toEqual({ C: 7.5, M: 67.5, Y: 82.5, K: 37.5 });
+    expect(specJson.dotGain).toBe(14);
+    expect(specJson.bvg).toBe(true);
+    expect(specJson.grayStepsPerCell).toBeGreaterThan(20);
+
+    // 2. Run `benday halftone` loading `--config`, then override `--no-bvg` and `--rosette-preset image-aware`
+    const htNoDgLogs = [];
+    expect(
+      runCli(
+        [
+          'halftone',
+          'synthetic:ramp',
+          '--width',
+          '120',
+          '--height',
+          '90',
+          '-o',
+          outNoDg,
+          '--config',
+          cfgPath,
+          '--dot-gain',
+          '0',
+          '--no-bvg',
+          '--rosette-preset',
+          'image-aware',
+          '--json',
+        ],
+        { stdout: (s) => htNoDgLogs.push(s), stderr: () => {} }
+      ).exitCode
+    ).toBe(0);
+    const parsedNoDg = JSON.parse(htNoDgLogs.join('\n'));
+    expect(parsedNoDg.dotGain).toBe(0);
+    expect(parsedNoDg.bvg).toBe(false);
+    expect(parsedNoDg.rosettePreset).toBe('image-aware');
+    expect(parsedNoDg.hvsQuality.meanDeltaE).toBeGreaterThan(0);
+    expect(parsedNoDg.hvsQuality.grayStepsPerCell).toBe(specJson.grayStepsPerCell);
+
+    // 3. Run `benday halftone` directly from `--config` (`dotGain: 14, bvg: true`) without overrides
+    const htDgLogs = [];
+    expect(
+      runCli(
+        [
+          'halftone',
+          'synthetic:ramp',
+          '--width',
+          '120',
+          '--height',
+          '90',
+          '-o',
+          outDg,
+          '--config',
+          cfgPath,
+          '--json',
+        ],
+        { stdout: (s) => htDgLogs.push(s), stderr: () => {} }
+      ).exitCode
+    ).toBe(0);
+    const parsedDg = JSON.parse(htDgLogs.join('\n'));
+    expect(parsedDg.dotGain).toBe(14);
+    expect(parsedDg.bvg).toBe(true);
+    expect(parsedDg.rosettePreset).toBe('fta');
+    for (const ch of ['C', 'M', 'Y', 'K']) {
+      expect(parsedDg.audits[ch].ok).toBe(true);
+    }
+
+    // Verify dotGain=14 reduced midtone ink coverage compared to dotGain=0 while keeping 0%/100% intact
+    const dec0 = decodeTiff(fs.readFileSync(outNoDg));
+    const dec14 = decodeTiff(fs.readFileSync(outDg));
+    let sum0 = 0;
+    let sum14 = 0;
+    for (let i = 0; i < dec0.channels.C.length; i++) {
+      sum0 += dec0.channels.C[i];
+      sum14 += dec14.channels.C[i];
+    }
+    expect(sum14).toBeLessThan(sum0);
+
+    // 4. Reject out-of-range `--dot-gain 25` cleanly with exitCode 1
+    const errRes = runCli(['spec', '--dot-gain', '25'], { stdout: () => {}, stderr: () => {} });
+    expect(errRes.exitCode).toBe(1);
+  });
+
+  it('audits 1-channel Grayscale `benday halftone --bvg` against BVG-conditioned source strokes with 0 violations', () => {
+    const dir = makeTempDir();
+    const inPgm = path.join(dir, 'aa_stroke.pgm');
+    const outPgm = path.join(dir, 'aa_stroke_ht.pgm');
+
+    // 96x96 @ 600 DPI (`230 TPI / N=5.0` -> `dMinPx = 5 px`).
+    // Draw a 2px vertical stroke (`gray = 238`, `< 255` and `< dMinPx = 5`!) flanked by 1px anti-aliased rims (`gray = 90`).
+    // BVG snaps the 2px stroke interior to `255` solid ink; `verifyScreenInvariants` MUST audit against `conditionedGray`!
+    const W = 96;
+    const H = 96;
+    const gray = new Uint8Array(W * H);
+    for (let y = 12; y < 84; y++) {
+      gray[y * W + 46] = 90;
+      gray[y * W + 47] = 238;
+      gray[y * W + 48] = 238;
+      gray[y * W + 49] = 90;
+    }
+    fs.writeFileSync(inPgm, encodePgm(gray, W, H));
+
+    const logs = [];
+    const res = runCli(
+      [
+        'halftone',
+        inPgm,
+        '-o',
+        outPgm,
+        '--mesh',
+        '230',
+        '--n',
+        '5.0',
+        '--dpi',
+        '600',
+        '--bvg',
+        '--json',
+      ],
+      { stdout: (s) => logs.push(s), stderr: () => {} }
+    );
+    expect(res.exitCode).toBe(0);
+    const parsed = JSON.parse(logs.join('\n'));
+    expect(parsed.bvg).toBe(true);
+    expect(parsed.audit.ok).toBe(true);
+    expect(parsed.audit.minDotViolations).toBe(0);
+    expect(parsed.audit.solidPreservationViolations).toBe(0);
+
+    const outDecoded = decodePgm(fs.readFileSync(outPgm));
+    // Interior of snapped stroke at x=47, y=48 is crisp 255 solid ink
+    expect(outDecoded.gray[48 * W + 47]).toBe(255);
+    expect(outDecoded.gray[48 * W + 48]).toBe(255);
+  });
 });

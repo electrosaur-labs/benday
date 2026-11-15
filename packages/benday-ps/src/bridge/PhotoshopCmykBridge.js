@@ -1,6 +1,12 @@
 'use strict';
 
-const { halftoneCmyk } = require('@electrosaur-labs/benday-core');
+const {
+  halftoneCmyk,
+  serializePressConfig,
+  parsePressConfig,
+  embedPressConfigInXmp,
+  extractPressConfigFromXmp,
+} = require('@electrosaur-labs/benday-core');
 
 const LAYER_PREFIX = 'Benday Halftone';
 const CHANNEL_ORDER = Object.freeze([
@@ -249,13 +255,66 @@ function formatBendayLayerName({ meshTpi, lpiActive, ruleOfN }) {
 }
 
 /**
+ * Synchronously detect whether a Photoshop document has an active pixel selection via UXP DOM.
+ */
+function hasActiveSelectionDom(doc) {
+  if (!doc) return false;
+  try {
+    const b = doc.selection && doc.selection.bounds;
+    if (b != null) {
+      const left = typeof b.left === 'number' ? b.left : Number(b.left && b.left._value);
+      const top = typeof b.top === 'number' ? b.top : Number(b.top && b.top._value);
+      const right = typeof b.right === 'number' ? b.right : Number(b.right && b.right._value);
+      const bottom = typeof b.bottom === 'number' ? b.bottom : Number(b.bottom && b.bottom._value);
+      if (Number.isFinite(left) && Number.isFinite(right)) {
+        return right > left && bottom > top;
+      }
+      return typeof b === 'object';
+    }
+  } catch (_) {
+    /* UXP throws or returns null when no selection is active */
+  }
+  return false;
+}
+
+/**
+ * Query ActionManager (`batchPlay`) for whether the active document currently has an active selection.
+ * Returns `true` when `res[0].selection` is present (Photoshop omits `selection` when unselected).
+ */
+async function queryHasActiveSelection(action) {
+  if (!action || typeof action.batchPlay !== 'function') return false;
+  try {
+    const res = await action.batchPlay(
+      [
+        {
+          _obj: 'get',
+          _target: [
+            { _ref: 'property', _property: 'selection' },
+            { _ref: 'document', _enum: 'ordinal', _value: 'targetEnum' },
+          ],
+        },
+      ],
+      {}
+    );
+    const sel = res && res[0] && res[0].selection;
+    return Boolean(sel && typeof sel === 'object');
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
  * Validate active Photoshop document before opening the Benday modal dialog.
- * Rejects missing documents or non-CMYK documents cleanly with profile-conversion guidance.
+ * Rejects missing documents, non-CMYK documents, documents that already contain a `Benday Halftone*`
+ * layer (unless `options.allowPriorHalftoneLayer === true`), multi-layer documents (`layerCount > 1`,
+ * unless `options.allowMultiLayer === true`), and documents with an active selection (unless
+ * `options.allowActiveSelection === true`).
  *
  * @param {object} app - Photoshop UXP app object
+ * @param {{ allowPriorHalftoneLayer?: boolean, allowMultiLayer?: boolean, allowActiveSelection?: boolean }} [options={}]
  * @returns {{ ok: boolean, code?: string, title: string, message: string, docInfo?: object }}
  */
-function validateDocument(app) {
+function validateDocument(app, options = {}) {
   const doc = app && app.activeDocument;
   if (!doc) {
     return {
@@ -288,6 +347,41 @@ function validateDocument(app) {
     };
   }
 
+  if (!options.allowPriorHalftoneLayer && collectPriorBendayLayerRefs(doc.layers).length > 0) {
+    return {
+      ok: false,
+      code: 'ERR_ALREADY_HALFTONED',
+      title: 'Already Halftoned',
+      message:
+        `Active document "${doc.name || 'Untitled'}" already contains a Benday Halftone layer.\n\n` +
+        'Undo or delete the "Benday Halftone" layer (and make your continuous-tone layer visible) before running Benday again.',
+    };
+  }
+
+  const rootLayers = doc.layers ? Array.from(doc.layers) : [];
+  if (!options.allowMultiLayer && rootLayers.length > 1) {
+    return {
+      ok: false,
+      code: 'ERR_MULTI_LAYER',
+      title: 'Flatten First',
+      message:
+        `Benday requires a single-layer CMYK document.\n\n` +
+        `Current layers: ${rootLayers.length}\n\n` +
+        'Flatten via Layer → Flatten Image, then run Benday again.',
+    };
+  }
+
+  if (!options.allowActiveSelection && hasActiveSelectionDom(doc)) {
+    return {
+      ok: false,
+      code: 'ERR_ACTIVE_SELECTION',
+      title: 'Active Selection',
+      message:
+        'Benday operates on the entire CMYK document.\n\n' +
+        'Deselect via Select → Deselect (Cmd/Ctrl+D), then run Benday again.',
+    };
+  }
+
   return {
     ok: true,
     title: 'OK',
@@ -300,6 +394,7 @@ function validateDocument(app) {
       height: doc.height,
       resolution: doc.resolution || 300,
       bitsPerChannel: doc.bitsPerChannel || 8,
+      layerCount: rootLayers.length || 1,
     },
   };
 }
@@ -716,7 +811,10 @@ async function createTempSplitChannels(app, action, origDocId, origIs16, tempDoc
  * (with prior Benday Halftone* layers hidden and 255 - gray ink polarity applied).
  */
 async function readPreviewCrop(app, cropBounds, psDeps) {
-  const validation = validateDocument(app);
+  const validation = validateDocument(app, {
+    allowPriorHalftoneLayer: true,
+    allowMultiLayer: true,
+  });
   if (!validation.ok) {
     throw new Error(validation.message);
   }
@@ -817,7 +915,10 @@ async function readPreviewCrop(app, cropBounds, psDeps) {
  * manager never blocks temporary document creation, and reused during `commitHalftoneLayer`.
  */
 async function readFullCmykChannels(app, psDeps) {
-  const validation = validateDocument(app);
+  const validation = validateDocument(app, {
+    allowPriorHalftoneLayer: true,
+    allowMultiLayer: true,
+  });
   if (!validation.ok) {
     throw new Error(validation.message);
   }
@@ -962,7 +1063,10 @@ async function commitHalftoneLayer(
   onProgress,
   preReadChannels = null
 ) {
-  const validation = validateDocument(app);
+  const validation = validateDocument(app, {
+    allowPriorHalftoneLayer: true,
+    allowMultiLayer: true,
+  });
   if (!validation.ok) {
     throw new Error(validation.message);
   }
@@ -1058,8 +1162,10 @@ async function commitHalftoneLayer(
         // Step 3: Run zero-dependency mesh-aware halftone engine
         updateModalProgress(0.5, 'Computing mesh-aware CMYK halftone screens...');
         const tEngine = Date.now();
+        const lockedAngles = stateConfig.anglesOverride || stateConfig.angles || null;
         const halftoneResult = halftoneCmyk(channels, width, height, {
           ...stateConfig,
+          ...(lockedAngles ? { rosettePreset: 'manual', anglesOverride: lockedAngles } : {}),
           dpi,
         });
         const { plates, meshSpec, moireReport, angles } = halftoneResult;
@@ -1217,6 +1323,30 @@ async function commitHalftoneLayer(
           );
           assertBatchPlayOk(makeRes, 'layer make');
 
+          const pressConfigJson = serializePressConfig(stateConfig, {
+            documentName: origDoc.name || '',
+          });
+          try {
+            await action.batchPlay(
+              [
+                {
+                  _obj: 'set',
+                  _target: [
+                    { _ref: 'property', _property: 'generatorSettings' },
+                    { _ref: 'layer', _enum: 'ordinal', _value: 'targetEnum' },
+                  ],
+                  to: {
+                    _obj: 'generatorSettings',
+                    bendayConfig: pressConfigJson,
+                  },
+                },
+              ],
+              {}
+            );
+          } catch (_) {
+            /* best-effort per-layer generatorSettings */
+          }
+
           try {
             await action.batchPlay(
               [
@@ -1353,6 +1483,48 @@ async function commitHalftoneLayer(
           throw commitErr;
         }
 
+        // Embed PressConfig manifest into document XMP (`<!-- BENDAY:BEGIN -->...<!-- BENDAY:END -->`)
+        // post-`resumeHistory` (matching Reveal's PhotoshopBridge.writeStructuredXMP) for `.psd` survival.
+        try {
+          const xmpGet = await action.batchPlay(
+            [
+              {
+                _obj: 'get',
+                _target: [
+                  { _ref: 'property', _property: 'XMPMetadataAsUTF8' },
+                  { _ref: 'document', _enum: 'ordinal', _value: 'targetEnum' },
+                ],
+              },
+            ],
+            {}
+          );
+          const rawXmp =
+            xmpGet && xmpGet[0] && typeof xmpGet[0].XMPMetadataAsUTF8 === 'string'
+              ? xmpGet[0].XMPMetadataAsUTF8
+              : '';
+          const updatedXmp = embedPressConfigInXmp(rawXmp, stateConfig, {
+            documentName: origDoc.name || '',
+          });
+          await action.batchPlay(
+            [
+              {
+                _obj: 'set',
+                _target: [
+                  { _ref: 'property', _property: 'XMPMetadataAsUTF8' },
+                  { _ref: 'document', _enum: 'ordinal', _value: 'targetEnum' },
+                ],
+                to: {
+                  _obj: 'document',
+                  XMPMetadataAsUTF8: updatedXmp,
+                },
+              },
+            ],
+            {}
+          );
+        } catch (_) {
+          /* best-effort document XMP embed */
+        }
+
         updateModalProgress(1.0, 'Done');
         logInfo(`Committed "${layerName}" on doc ${origDocId} in ${Date.now() - tStart} ms`);
 
@@ -1372,6 +1544,134 @@ async function commitHalftoneLayer(
   );
 }
 
+/**
+ * Safely query active document `XMPMetadataAsUTF8` string via ActionManager (`batchPlay`).
+ * Returns `''` when unavailable or if Photoshop throws.
+ */
+async function queryDocumentXmp(action) {
+  if (!action || typeof action.batchPlay !== 'function') {
+    return '';
+  }
+  try {
+    const xmpRes = await action.batchPlay(
+      [
+        {
+          _obj: 'get',
+          _target: [
+            { _ref: 'property', _property: 'XMPMetadataAsUTF8' },
+            { _ref: 'document', _enum: 'ordinal', _value: 'targetEnum' },
+          ],
+        },
+      ],
+      {}
+    );
+    return xmpRes && xmpRes[0] && typeof xmpRes[0].XMPMetadataAsUTF8 === 'string'
+      ? xmpRes[0].XMPMetadataAsUTF8
+      : '';
+  } catch (_) {
+    return '';
+  }
+}
+
+/**
+ * Detect whether a single-layer/flattened CMYK document is already a committed Benday halftone:
+ * returns `true` iff `extractPressConfigFromXmp(xmpString) !== null` AND `channels` contains
+ * non-zero ink where `>= 99%` of sampled pixels across `{ C, M, Y, K }` are binary (`v <= 1 || v >= 254`).
+ */
+function isFlattenedBendayDocument(xmpString, channels) {
+  if (typeof xmpString !== 'string' || !xmpString.trim()) {
+    return false;
+  }
+  if (extractPressConfigFromXmp(xmpString) === null) {
+    return false;
+  }
+  if (!channels || !channels.C || !channels.M || !channels.Y || !channels.K) {
+    return false;
+  }
+
+  const pixelCount = channels.C.length;
+  if (!(pixelCount > 0)) {
+    return false;
+  }
+
+  const step = Math.max(1, Math.floor(pixelCount / 16384));
+  let totalSampled = 0;
+  let binaryCount = 0;
+  let nonZeroCount = 0;
+
+  for (let c = 0; c < CHANNEL_ORDER.length; c++) {
+    const arr = channels[CHANNEL_ORDER[c].key];
+    if (!arr || arr.length !== pixelCount) return false;
+    for (let i = 0; i < pixelCount; i += step) {
+      const v = arr[i];
+      totalSampled++;
+      if (v > 1) nonZeroCount++;
+      if (v <= 1 || v >= 254) binaryCount++;
+    }
+  }
+
+  return totalSampled > 0 && nonZeroCount > 0 && binaryCount / totalSampled >= 0.99;
+}
+
+/**
+ * Read saved `PressConfig` from an open CMYK `.psd` document when an existing `Benday Halftone*`
+ * layer is present on `origDoc`. Checks per-layer `generatorSettings.bendayConfig` first, then
+ * falls back to document `XMPMetadataAsUTF8` (`<!-- BENDAY:BEGIN -->...<!-- BENDAY:END -->`).
+ *
+ * Returns `null` if no `Benday Halftone*` layer exists on `origDoc` (preventing stale XMP restore
+ * after a user deletes the Benday layer) or if no valid manifest is stored.
+ */
+async function readSavedPressConfigFromDocument(app, psDeps) {
+  const validation = validateDocument(app, {
+    allowPriorHalftoneLayer: true,
+    allowMultiLayer: true,
+  });
+  if (!validation.ok) return null;
+
+  const origDoc = app.activeDocument;
+  const priorRefs = collectPriorBendayLayerRefs(origDoc && origDoc.layers);
+  if (priorRefs.length === 0) {
+    return null;
+  }
+
+  const ps = psDeps || require('photoshop');
+  const { action } = ps;
+  if (!action || typeof action.batchPlay !== 'function') {
+    return null;
+  }
+
+  // 1. Try per-layer `generatorSettings.bendayConfig` on the top `Benday Halftone*` layer
+  try {
+    const genRes = await action.batchPlay(
+      [
+        {
+          _obj: 'get',
+          _target: [{ _ref: 'property', _property: 'generatorSettings' }, priorRefs[0]],
+        },
+      ],
+      {}
+    );
+    const rawCfg =
+      genRes &&
+      genRes[0] &&
+      genRes[0].generatorSettings &&
+      genRes[0].generatorSettings.bendayConfig;
+    if (typeof rawCfg === 'string' && rawCfg.trim()) {
+      return parsePressConfig(rawCfg);
+    }
+  } catch (_) {
+    /* fall through to document XMP */
+  }
+
+  // 2. Fallback to document `XMPMetadataAsUTF8` structured comment block
+  const rawXmp = await queryDocumentXmp(action);
+  if (rawXmp) {
+    return extractPressConfigFromXmp(rawXmp);
+  }
+
+  return null;
+}
+
 module.exports = {
   LAYER_PREFIX,
   CHANNEL_ORDER,
@@ -1381,14 +1681,19 @@ module.exports = {
   queryActiveDocId,
   queryActiveLayerId,
   queryDocumentTitle,
+  queryDocumentXmp,
+  hasActiveSelectionDom,
+  queryHasActiveSelection,
   classifySplitChannelTitle,
   listOpenDocIds,
   formatBendayLayerName,
   validateDocument,
+  isFlattenedBendayDocument,
   computeCropBounds,
   hidePriorBendayLayers,
   readPreviewCrop,
   readFullCmykChannels,
   sliceCmykCrop,
   commitHalftoneLayer,
+  readSavedPressConfigFromDocument,
 };

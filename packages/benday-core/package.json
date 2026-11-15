@@ -1,6 +1,6 @@
 {
   "name": "@electrosaur-labs/benday-core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Zero-dependency mesh-aware CMYK halftone engine and screen physics for screen printing",
   "main": "index.js",
   "scripts": {

@@ -24,25 +24,25 @@ node packages/benday-cli/bin/benday.js <subcommand> [options]
 
 ### 1. `benday halftone`
 
-Halftones a 4-channel Separated CMYK TIFF, a 1-channel Grayscale TIFF/PGM, or a built-in `synthetic:*` test chart into binary `{0, 255}` halftone screen output, and audits every generated screen via `verifyPlateInvariants`.
+Halftones a 4-channel Separated CMYK TIFF, a 1-channel Grayscale TIFF/PGM, or a built-in `synthetic:*` test chart into binary `{0, 255}` halftone screen output, and audits every generated screen via `verifyScreenInvariants`.
 
 ```bash
-# 4-channel CMYK uncompressed TIFF -> 4-channel CMYK halftone TIFF
-benday halftone input-cmyk.tif -o output-cmyk.tif --mesh 230 --n 5.0
+# 4-channel CMYK TIFF with 10% press dot-gain pullback, BVG crisp type, and Image-Aware rosette
+benday halftone input-cmyk.tif -o output-cmyk.tif --mesh 230 --n 5.0 --dot-gain 10 --bvg --rosette-preset image-aware
 
-# Also write individual _C.tif, _M.tif, _Y.tif, _K.tif single-screen TIFFs
-benday halftone input-cmyk.tif -o output-cmyk.tif --mesh 305 --n 5.0 --split-screens ./screens
+# Load a saved -benday.json shop preset (explicit CLI flags override preset fields) and split screens
+benday halftone input-cmyk.tif -o output-cmyk.tif --config shop-230-benday.json --split-screens ./screens
 
 # 1-channel Grayscale TIFF or PGM at a custom screen angle
 benday halftone keyline-gray.pgm -o keyline-screen.pgm --mesh 230 --dpi 600 --angle 45 --tail hybrid
 
-# Emit full JSON report (active LPI, D_min, rosette angles, moire warnings, per-screen audits)
-benday halftone synthetic:ramp -o ramp.tif --mesh 230 --dpi 600 --json
+# Emit full JSON report (active LPI, D_min, grayStepsPerCell, hvsQuality ΔE, rosette angles, per-screen audits)
+benday halftone synthetic:ramp -o ramp.tif --mesh 230 --dpi 600 --save-config shop-230-benday.json --json
 ```
 
 ### 2. `benday verify`
 
-Independently audits an existing 1-channel or 4-channel halftone file against physical mesh invariants (`computeMeshSpec` + `verifyPlateInvariants`).
+Independently audits an existing 1-channel or 4-channel halftone file against physical mesh invariants (`computeMeshSpec` + `verifyScreenInvariants`).
 
 - **Exit code `0` (`PASS`):** Every pixel is strictly `{0, 255}`, all positive halftone dots and enclosed shadow holes satisfy canonical $B_{D_{\min}}$ morphological openness (`minDotViolations === 0` and `minHoleViolations === 0`), and — when `--src` is supplied — all `100%` solid pixels (`255`) are preserved and `0%` paper regions have zero stray bleed.
 - **Exit code `1` (`FAIL`):** Any physical invariant violation or invalid geometry/file error.
@@ -83,19 +83,24 @@ Rosette: C=15° M=75° Y=60° K=45° (min clearance 13.0°, safe=true)
 | Flag | Default | Description |
 |---|---|---|
 | `-o <file>`, `--output <file>` | *(2nd positional arg)* | Output `.tif` or `.pgm` path for `benday halftone` |
+| `--config <file.json>` | *(optional)* | Load a `-benday.json` press configuration (`defaults < --config < explicit CLI flags`) |
+| `--save-config <file.json>` | *(optional)* | Write the resolved press configuration to `<file.json>` (`schemaVersion: "0.2.0"`) |
 | `--mesh <tpi>` | `230` | Screen mesh count in threads per inch |
 | `--thread <um>` | *catalog auto* | Monofilament thread diameter in micrometers (`µm`) |
 | `--n <num>` | `5.0` | Rule of N threads per halftone cell in `[2.0, 10.0]` |
 | `--dpi <ppi>` | *TIFF tag or `600`* | Document resolution in pixels per inch |
-| `--lpi <lpi>` | *auto (`lpiNatural`)* | Optional manual halftone screen ruling override (`<= lpiMax`) |
+| `--lpi <LPI>` | *auto (`lpiNatural`)* | Optional manual halftone screen ruling override (`<= lpiMax`) |
 | `--mesh-angle <deg>` | `0` | Mesh stretch bias angle `θ` in degrees (modulo `90°`) |
+| `--rosette-preset <id>` | `auto` | Rosette preset: `auto` \| `image-aware` \| `fta` \| `iso` \| `flamenco` \| `manual` |
 | `--angle <deg>` | `45` | Screen angle override in degrees for 1-channel `halftone` inputs |
+| `--dot-gain <pct>` | `0` | Extra press dot-gain midtone pullback in `[0, 20]` `%` |
+| `--bvg` / `--no-bvg` | `true` | Enable / disable Bimodal Variance-Gated (`BVG`) crisp type & narrow Rich-Black UCR |
 | `--tail <mode>` | `hybrid` | Highlight/shadow tail mode: `hybrid` \| `cutoff` \| `clamp` |
 | `--split-screens <dir>` | *(off)* | Write `<stem>_C.tif`, `<stem>_M.tif`, `<stem>_Y.tif`, `<stem>_K.tif` to `<dir>` during 4-channel `halftone` |
 | `--src <file>` | *(optional)* | Original continuous-tone file (or `synthetic:*`) for solid & paper checks in `benday verify` |
 | `--width <px>` | `200` | Width in pixels when reading a `synthetic:*` input |
 | `--height <px>` | `160` | Height in pixels when reading a `synthetic:*` input |
-| `--json` | `false` | Emit structured JSON output to stdout |
+| `--json` | `false` | Emit structured JSON output to stdout (including `grayStepsPerCell` and 16-bit CIELAB `hvsQuality`) |
 | `-h`, `--help` | — | Print usage summary and exit `0` |
 
 ---

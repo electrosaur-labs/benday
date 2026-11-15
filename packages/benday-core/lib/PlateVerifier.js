@@ -455,4 +455,5 @@ module.exports = {
   openByCanonicalDisk,
   computeChebyshevPositiveNeighborhood,
   verifyPlateInvariants,
+  verifyScreenInvariants: verifyPlateInvariants,
 };

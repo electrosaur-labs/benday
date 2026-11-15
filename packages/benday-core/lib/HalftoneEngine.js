@@ -1,10 +1,39 @@
 'use strict';
 
 const { computeMeshSpec, getCanonicalDiskOffsets } = require('./MeshPhysics');
-const { computeRosetteAngles, analyzeMoire, norm90 } = require('./RosetteAngles');
+const {
+  computeRosetteAngles,
+  resolveRosettePresetAngles,
+  analyzeMoire,
+  norm90,
+} = require('./RosetteAngles');
 const { radiusForDiamondTone } = require('./EuclideanLut');
+const { snapChannelEdges, snapCmykEdges } = require('./BvgEdgeSnapper');
 
 const TAIL_MODES = Object.freeze(['hybrid', 'cutoff', 'clamp']);
+
+/**
+ * Parabolic press dot-gain pre-pullback curve:
+ *   DeltaG = clamp(dotGain, 0, 20) / 100 in [0, 0.20]
+ *   t_film = t - 4 * DeltaG * t * (1 - t)
+ *
+ * Strictly monotonic (g'(t) >= 1 - 4*DeltaG >= 0.20 > 0) with exact fixed points
+ * g(0) = 0, g(1) = 1 and exact midtone pullback g(0.50) = 0.50 - DeltaG.
+ *
+ * @param {number} t - Continuous tone in [0, 1]
+ * @param {number} [dotGain=0] - Expected press dot gain at 50% midtone, in [0..20] %
+ * @returns {number}
+ */
+function applyDotGainPullback(t, dotGain = 0) {
+  if (!(t > 0)) return 0;
+  if (t >= 1) return 1;
+  const dg = Math.max(0, Math.min(20, Number(dotGain) || 0)) * 0.01;
+  if (dg === 0) return t;
+  const pulled = t - 4 * dg * t * (1 - t);
+  if (pulled <= 0) return 0;
+  if (pulled >= 1) return 1;
+  return pulled;
+}
 
 const CHANNEL_SEEDS = Object.freeze({
   C: 0x243f6a88,
@@ -736,7 +765,7 @@ function getChannelCalibrationLut(meshSpec, angleDeg) {
  * @param {number} height
  * @param {object} options
  * @param {object} [options.meshSpec] - Precomputed computeMeshSpec() result (or mesh params below)
- * @param {number} [options.meshTpi=230]
+ * @param {number} [options.meshTpi=355]
  * @param {number} [options.threadDiaUm]
  * @param {number} [options.ruleOfN=5.0]
  * @param {number} [options.dpi=600]
@@ -764,7 +793,7 @@ function halftoneChannel(srcUint8, width, height, options = {}) {
   const meshSpec =
     options.meshSpec ||
     computeMeshSpec({
-      meshTpi: options.meshTpi == null ? 230 : options.meshTpi,
+      meshTpi: options.meshTpi == null ? 355 : options.meshTpi,
       threadDiaUm: options.threadDiaUm,
       ruleOfN: options.ruleOfN,
       dpi: options.dpi == null ? 600 : options.dpi,
@@ -772,6 +801,10 @@ function halftoneChannel(srcUint8, width, height, options = {}) {
       dpiY: options.dpiY,
       lpiOverride: options.lpiOverride,
     });
+
+  if (options.bvg === true && !options._preSnapped && !options._probeState) {
+    srcUint8 = snapChannelEdges(srcUint8, width, height);
+  }
 
   const N = width * height;
   const mSolid = new Uint8Array(N);
@@ -901,13 +934,18 @@ function halftoneChannel(srcUint8, width, height, options = {}) {
   const primTone = new Float64Array(gTotal);
   const dualTone = new Float64Array(gTotal);
   const inv255 = 1 / 255;
+  const dotGainPct = options._probeState
+    ? 0
+    : Math.max(0, Math.min(20, Number(options.dotGain) || 0));
 
   for (let idx = 0; idx < gTotal; idx++) {
     if (primCount[idx] > 0 && primNonZero[idx]) {
-      primTone[idx] = (primSum[idx] * inv255) / primCount[idx];
+      const rawT = (primSum[idx] * inv255) / primCount[idx];
+      primTone[idx] = dotGainPct > 0 ? applyDotGainPullback(rawT, dotGainPct) : rawT;
     }
     if (dualCount[idx] > 0 && dualNonZero[idx]) {
-      dualTone[idx] = (dualSum[idx] * inv255) / dualCount[idx];
+      const rawT = (dualSum[idx] * inv255) / dualCount[idx];
+      dualTone[idx] = dotGainPct > 0 ? applyDotGainPullback(rawT, dotGainPct) : rawT;
     }
   }
 
@@ -1792,7 +1830,7 @@ function halftoneChannel(srcUint8, width, height, options = {}) {
  * @param {number} width
  * @param {number} height
  * @param {object} [config]
- * @param {number} [config.meshTpi=230]
+ * @param {number} [config.meshTpi=355]
  * @param {number} [config.threadDiaUm]
  * @param {number} [config.ruleOfN=5.0]
  * @param {number} [config.dpi=600]
@@ -1809,7 +1847,7 @@ function halftoneCmyk(channels, width, height, config = {}) {
   }
 
   const meshSpec = computeMeshSpec({
-    meshTpi: config.meshTpi == null ? 230 : config.meshTpi,
+    meshTpi: config.meshTpi == null ? 355 : config.meshTpi,
     threadDiaUm: config.threadDiaUm,
     ruleOfN: config.ruleOfN,
     dpi: config.dpi == null ? 600 : config.dpi,
@@ -1818,8 +1856,25 @@ function halftoneCmyk(channels, width, height, config = {}) {
     lpiOverride: config.lpiOverride,
   });
 
+  const useBvg = config.bvg !== false;
+  const workChannels = useBvg
+    ? snapCmykEdges(channels, width, height, { cellPitchPx: meshSpec.cellPitchPx })
+    : channels;
+
   const meshAngleDeg = config.meshAngleDeg == null ? 0 : config.meshAngleDeg;
-  const baseAngles = config.anglesOverride || computeRosetteAngles(meshAngleDeg);
+  const hasExplicitOverride = config.anglesOverride != null;
+  const baseAngles = hasExplicitOverride
+    ? config.anglesOverride
+    : config.rosettePreset
+    ? resolveRosettePresetAngles(
+        config.rosettePreset,
+        meshAngleDeg,
+        workChannels,
+        width,
+        height,
+        null
+      )
+    : computeRosetteAngles(meshAngleDeg);
   const angles = {
     C: norm90(baseAngles.C),
     M: norm90(baseAngles.M),
@@ -1837,37 +1892,50 @@ function halftoneCmyk(channels, width, height, config = {}) {
   });
 
   const tailMode = config.tailMode || 'hybrid';
+  const dotGain = config.dotGain == null ? 0 : config.dotGain;
   const originX = config.originX;
   const originY = config.originY;
-  const plates = {
-    C: halftoneChannel(channels.C, width, height, {
+  const screens = {
+    C: halftoneChannel(workChannels.C, width, height, {
       meshSpec,
       angleDeg: angles.C,
       tailMode,
+      dotGain,
+      bvg: useBvg,
+      _preSnapped: useBvg,
       channelKey: 'C',
       originX,
       originY,
     }),
-    M: halftoneChannel(channels.M, width, height, {
+    M: halftoneChannel(workChannels.M, width, height, {
       meshSpec,
       angleDeg: angles.M,
       tailMode,
+      dotGain,
+      bvg: useBvg,
+      _preSnapped: useBvg,
       channelKey: 'M',
       originX,
       originY,
     }),
-    Y: halftoneChannel(channels.Y, width, height, {
+    Y: halftoneChannel(workChannels.Y, width, height, {
       meshSpec,
       angleDeg: angles.Y,
       tailMode,
+      dotGain,
+      bvg: useBvg,
+      _preSnapped: useBvg,
       channelKey: 'Y',
       originX,
       originY,
     }),
-    K: halftoneChannel(channels.K, width, height, {
+    K: halftoneChannel(workChannels.K, width, height, {
       meshSpec,
       angleDeg: angles.K,
       tailMode,
+      dotGain,
+      bvg: useBvg,
+      _preSnapped: useBvg,
       channelKey: 'K',
       originX,
       originY,
@@ -1875,7 +1943,9 @@ function halftoneCmyk(channels, width, height, config = {}) {
   };
 
   return {
-    plates,
+    screens,
+    plates: screens,
+    conditionedChannels: workChannels,
     meshSpec,
     moireReport,
     angles,
@@ -1885,6 +1955,7 @@ function halftoneCmyk(channels, width, height, config = {}) {
 module.exports = {
   TAIL_MODES,
   CHANNEL_SEEDS,
+  applyDotGainPullback,
   getDiskRowSpans,
   erodeByDiskSpans,
   dilateByDiskSpans,

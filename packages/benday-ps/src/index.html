@@ -13,9 +13,11 @@
         <div id="doc-header">
           <span id="benday-doc-title">Untitled.psd — 2400×3000 @ 600 DPI</span>
           <span class="stat-sep">&middot;</span>
-          <span id="stat-mesh-lpi">230 TPI &middot; 46.0 LPI</span>
+          <span id="stat-mesh-lpi">355 TPI &middot; 71.2 LPI</span>
           <span class="stat-sep">&middot;</span>
           <span id="stat-min-dot">D_min 5 px</span>
+          <span class="stat-sep">&middot;</span>
+          <span id="hvs-telemetry" title="Viewing-distance color fidelity in canonical 16-bit CIELAB and discrete gray steps per halftone cell">&Delta;E -- &middot; -- steps</span>
           <span class="stat-sep">&middot;</span>
           <span id="moire-status-badge" class="badge-safe">ROSETTE SAFE</span>
           <span id="benday-preview-status">Ready</span>
@@ -52,6 +54,7 @@
               <img id="preview-img" alt="Halftone Preview" />
             </div>
             <div id="preview-placeholder">Loading CMYK channels…</div>
+            <div id="preview-busy-badge" style="display: none;">Rendering…</div>
             <div id="loupe-container">
               <img id="loupe-img" alt="1:1 Halftone Loupe" />
               <span id="loupe-mode-pill">1:1 &middot; 46.0 LPI</span>
@@ -64,7 +67,7 @@
         <div id="screen-strip">
           <div class="screen-strip-header">
             <span class="screen-strip-title">SCREENS</span>
-            <span class="screen-strip-hint">Click screen to solo film positive &middot; Click image to compare Original &middot; Drag to pan when zoomed</span>
+            <span class="screen-strip-hint">Click screen to solo film positive &middot; Click or hold image to blink-compare &middot; Drag to pan when zoomed</span>
           </div>
           <div class="screen-swatch-row">
             <button type="button" class="screen-swatch is-active" data-preview-mode="composite">
@@ -100,7 +103,7 @@
               <span class="swatch-chip" style="background: #fff200;"></span>
               <span class="swatch-text">
                 <span class="swatch-name">Yellow</span>
-                <span class="swatch-meta" id="swatch-meta-Y">0° &middot; --%</span>
+                <span class="swatch-meta" id="swatch-meta-Y">60° &middot; --%</span>
               </span>
             </button>
 
@@ -118,9 +121,11 @@
       <!-- Right Column: Action Buttons + Screen Mesh & Halftone Physics Controls -->
       <div id="hud-panel">
         <div id="knobs-header">
-          <button id="btn-reread" class="top-action-btn" title="Re-read continuous-tone CMYK channels from Photoshop">Reread Document</button>
-          <button id="btn-reset-top" class="top-action-btn" disabled title="Reset all Benday parameters to factory defaults">Reset to Defaults</button>
-          <button id="btn-benday-apply" class="top-action-btn">Apply Halftone</button>
+          <button id="btn-reread" type="button" class="top-action-btn" title="Re-read continuous-tone CMYK channels from Photoshop">Reread Document</button>
+          <button id="btn-reset-top" type="button" class="top-action-btn" disabled title="Reset all Benday parameters to factory defaults">Reset to Defaults</button>
+          <button id="btn-save-config" type="button" class="top-action-btn" title="Save press configuration to a -benday.json file">Save Config</button>
+          <button id="btn-load-config" type="button" class="top-action-btn" title="Load press configuration from a JSON file">Load Config</button>
+          <button id="btn-benday-apply" type="button" class="top-action-btn">Halftone</button>
         </div>
 
         <div id="knobs-scroll">
@@ -132,7 +137,7 @@
 
             <div class="knob-row">
               <span class="knob-label">Screen Mesh (TPI &ndash; &micro;m)</span>
-              <button id="btn-mesh-revert" type="button" class="knob-revert" title="Reset Screen Mesh to 230-48">&#x21BA;</button>
+              <button id="btn-mesh-revert" type="button" class="knob-revert" title="Reset Screen Mesh to 355-31">&#x21BA;</button>
             </div>
             <div class="mesh-picker-row">
               <select id="input-mesh-preset" title="Official SAATI screen mesh count and thread diameter">
@@ -142,7 +147,7 @@
                 <option value="156-48">156-48 (50% open · Hi-R)</option>
                 <option value="196-55">196-55 (33% open)</option>
                 <option value="196-48">196-48 (40% open · Hi-R)</option>
-                <option value="230-48" selected>230-48 (32% open)</option>
+                <option value="230-48">230-48 (32% open)</option>
                 <option value="230-40">230-40 (41% open · Hi-R)</option>
                 <option value="280-40">280-40 (31% open)</option>
                 <option value="280-34">280-34 (39% open · Hi-R)</option>
@@ -151,7 +156,7 @@
                 <option value="305-34">305-34 (35% open)</option>
                 <option value="305-31">305-31 (39% open · Hi-R)</option>
                 <option value="355-34">355-34 (28% open)</option>
-                <option value="355-31">355-31 (32% open · Hi-R)</option>
+                <option value="355-31" selected>355-31 (32% open · Hi-R)</option>
                 <option value="380-34">380-34 (24% open)</option>
                 <option value="380-31">380-31 (29% open · Hi-R)</option>
                 <option value="420-31">420-31 (24% open)</option>
@@ -162,11 +167,11 @@
             <div id="custom-mesh-row" style="display: none;">
               <div class="custom-mesh-field">
                 <label for="input-mesh-tpi">TPI</label>
-                <input id="input-mesh-tpi" class="mesh-tpi-num" type="number" min="40" max="600" step="1" value="230" title="Exact mesh count in threads per inch" />
+                <input id="input-mesh-tpi" class="mesh-tpi-num" type="number" min="40" max="600" step="1" value="355" title="Exact mesh count in threads per inch" />
               </div>
               <div class="custom-mesh-field">
                 <label for="input-thread-um">Thread µm</label>
-                <input id="input-thread-um" class="mesh-tpi-num" type="number" min="20" max="120" step="1" value="48" title="Physical filament diameter in microns" />
+                <input id="input-thread-um" class="mesh-tpi-num" type="number" min="20" max="120" step="1" value="31" title="Physical filament diameter in microns" />
               </div>
             </div>
             <div class="knob-help">Paired mesh count (threads/inch) and filament diameter (microns). Hi-R thin-thread rolls deliver wider open area for finer LPI rulings and cleaner highlights.</div>
@@ -199,15 +204,42 @@
             <sp-slider id="input-rule-n-slider" min="2" max="10" step="0.5" value="5" variant="filled"></sp-slider>
             <div class="knob-help">Mesh threads per halftone cell (LPI = Mesh TPI / N, scaled by open area; default N = 5.0). Higher N yields coarser LPI and sturdier stencil washout.</div>
 
-            <div class="knob-row">
+            <div class="knob-row knob-subdivider">
               <span class="knob-label">Screen Ruling (LPI)</span>
               <span class="knob-right">
-                <span id="readout-lpi-hint" class="knob-sub">Auto: 46.0 LPI</span>
+                <span id="readout-lpi-hint" class="knob-sub">Auto: 71.2 LPI</span>
                 <button id="btn-lpi-auto" type="button" class="knob-revert" title="Reset LPI to natural mesh ruling">&#x21BA;</button>
               </span>
             </div>
-            <input id="input-lpi-override" class="knob-full-input" type="number" min="5" max="200" step="0.5" placeholder="46.0 (Auto)" />
+            <input id="input-lpi-override" class="knob-full-input" type="number" min="5" max="200" step="0.5" placeholder="71.2 (Auto)" />
             <div class="knob-help">Lines per inch. Leave blank for natural Rule-of-N ruling, or enter a custom LPI within your mesh and DPI aperture limit.</div>
+          </div>
+
+          <!-- PRESS CONDITIONING (v0.2: Dot Gain & BVG Crisp Type) -->
+          <div class="knob-section">
+            <div class="group-header">
+              <span>PRESS CONDITIONING</span>
+            </div>
+
+            <div class="knob-row">
+              <span class="knob-label">Press Dot Gain</span>
+              <span class="knob-right">
+                <span id="readout-dot-gain" class="knob-val">0%</span>
+                <button id="btn-dot-gain-revert" type="button" class="knob-revert" title="Reset Press Dot Gain to 0%">&#x21BA;</button>
+              </span>
+            </div>
+            <sp-slider id="slider-dot-gain" min="0" max="20" step="1" value="0" variant="filled"></sp-slider>
+            <div class="knob-help">Compensates for physical squeegee ink spread on press (0–20% midtone gain) via parabolic Stage-1 film pullback while keeping 0% paper and 100% solids locked.</div>
+
+            <div class="knob-row knob-subdivider">
+              <label id="lbl-bvg" class="bvg-check-label" for="chk-bvg">
+                <span class="knob-label">Crisp Type &amp; Linework (BVG)</span>
+                <input id="chk-bvg" type="checkbox" class="bvg-native-chk" checked />
+                <span id="chk-bvg-box" class="bvg-custom-box is-checked" aria-hidden="true">&#10003;</span>
+              </label>
+              <button id="btn-bvg-revert" type="button" class="knob-revert" title="Reset Crisp Type &amp; Linework to On">&#x21BA;</button>
+            </div>
+            <div class="knob-help">Bimodal Variance-Gated edge conditioner: snaps anti-aliased graphic edges and promotes narrow Rich-Black type to solo K=100% without touching photographic gradients or wide Rich-Black fills.</div>
           </div>
 
           <!-- TAIL MODE -->
@@ -228,7 +260,17 @@
           <div class="knob-section">
             <div class="group-header">
               <span>ROSETTE ANGLES &amp; MOIRÉ</span>
-              <button id="btn-angles-auto" type="button" class="knob-revert" title="Reset C/M/Y/K angles to optimal moiré-free rosette">&#x21BA; Auto</button>
+              <button id="btn-angles-auto" type="button" class="knob-revert" title="Reset C/M/Y/K angles to Auto mesh-safe rosette">&#x21BA; Auto</button>
+            </div>
+            <div class="mesh-picker-row">
+              <select id="select-rosette-preset" title="Rosette angle assignment strategy">
+                <option value="auto" selected>Auto (Mesh-Safe Rosette)</option>
+                <option value="image-aware">Image-Aware (HVS Optimal)</option>
+                <option value="fta">FTA Flexo (+7.5°)</option>
+                <option value="iso">Conventional Offset (ISO)</option>
+                <option value="flamenco">Flamenco (Single-Angle)</option>
+                <option value="manual">Manual</option>
+              </select>
             </div>
             <div class="angles-grid">
               <div class="angle-cell">
@@ -241,7 +283,7 @@
               </div>
               <div class="angle-cell">
                 <label for="input-angle-y"><span class="angle-dot" style="background: #fff200;"></span>Y°</label>
-                <input id="input-angle-y" type="number" min="0" max="89.9" step="0.5" value="0" />
+                <input id="input-angle-y" type="number" min="0" max="89.9" step="0.5" value="60" />
               </div>
               <div class="angle-cell">
                 <label for="input-angle-k"><span class="angle-dot" style="background: #666;"></span>K°</label>
@@ -249,7 +291,7 @@
               </div>
             </div>
             <div id="moire-status-detail">Min thread clearance: 15.0° (±2.0° slop)</div>
-            <div class="knob-help">Classical 30° CMK rosette + 15° Yellow offset rotated against mesh threads. Warns immediately if any screen risks harmonic beat patterns on mesh.</div>
+            <div class="knob-help">Choose Auto mesh-safe rosette, Image-Aware slot assignment (puts dominant midtone ink on 45° oblique minimum), FTA +7.5°, ISO Offset, or Flamenco dot-on-dot.</div>
           </div>
 
           <!-- PRESS PHYSICS TELEMETRY -->
@@ -269,9 +311,214 @@
               <span class="telemetry-key">Pure AM Window</span>
               <span class="telemetry-val" id="phys-am-range">12% – 88% AM</span>
             </div>
+            <div class="telemetry-row">
+              <span class="telemetry-key">HVS Fidelity</span>
+              <span class="telemetry-val" id="phys-hvs-quality">&Delta;E -- &middot; 43 gray steps</span>
+            </div>
             <div id="benday-warnings-box" style="display: none;"></div>
             <div id="benday-error-banner" style="display: none;"></div>
           </div>
+        </div>
+
+        <div id="hud-footer">
+          <button type="button" id="btn-show-credits" class="credits-trigger-btn" title="Credits &amp; Dedication to Benjamin Henry Day Jr. (1879)">&#9733; Credits &#9733;</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Theatrical Crawling Credits Window & 1879 Ben Day Rapid Shading Medium Broadside -->
+    <div id="credits-overlay" style="display: none;">
+      <div id="credits-window">
+        <div id="credits-viewport">
+          <div id="credits-crawl">
+            <!-- Scene 1: Dedication to Benjamin Henry Day Jr. (1838-1916) -->
+            <div class="credits-scene">
+              <div id="credits-emblem" class="credits-emblem-interactive">
+                <img src="assets/electrosaur.png" alt="Electrosaur" class="credits-mascot-img" draggable="false" />
+                <div class="credits-stars">&#9733; &#9733; &#9733;</div>
+                <div class="credits-tag">Dedicated To</div>
+                <div class="credits-hero-title">Benjamin Henry Day Jr.</div>
+                <div class="credits-hero-subtitle">(1838–1916) &bull; Illustrator, Engraver &amp; Inventor of the<br />Rapid Shading Medium (April 22, 1879)</div>
+              </div>
+
+              <div id="credits-print-trigger" class="credits-print-interactive">
+                <div class="benday-patent-medallion">
+                  <div class="patent-medallion-dots"></div>
+                  <div class="patent-medallion-title">U.S. PATENT NO. 214,493</div>
+                  <div class="patent-medallion-sub">B. DAY &bull; PRINTING FILM &bull; NEW YORK, 1879</div>
+                </div>
+                <div class="credits-print-caption">U.S. Patent No. 214,493 &bull; April 22, 1879</div>
+              </div>
+
+              <div class="credits-quote">
+                &ldquo;Before pixels, before PostScript, before laser imagesetters, Benjamin Henry Day Jr. stretched ruled gelatin films inside a micrometer registration frame and gave printmakers tonal freedom through honest discrete dots.&rdquo;
+              </div>
+
+              <div class="credits-quote-divider"></div>
+              <div class="credits-stars">&#9733; &#9733; &#9733;</div>
+            </div>
+
+            <!-- Scene 2: Algorithmic & Optical Legends -->
+            <div class="credits-scene">
+              <div class="credits-tag">Optical &amp; Mathematical Lineage</div>
+              <div class="credits-hero-title" style="font-size: 19px;">The Halftone Legends</div>
+
+              <div class="credits-legend-card">
+                <div class="credits-badge">JF</div>
+                <div>
+                  <div><span class="credits-legend-name">Joseph Fourier</span><span class="credits-legend-year">(1822)</span></div>
+                  <div class="credits-legend-role">2D Reciprocal-Lattice Harmonic Beat Analysis</div>
+                  <div class="credits-legend-file">RosetteAngles.analyzeMoire</div>
+                </div>
+              </div>
+
+              <div class="credits-legend-card">
+                <div class="credits-badge">GA</div>
+                <div>
+                  <div><span class="credits-legend-name">George Biddell Airy</span><span class="credits-legend-year">(1835)</span></div>
+                  <div class="credits-legend-role">Circular-Aperture Bessel J&#8321; Dot Modulation</div>
+                  <div class="credits-legend-file">RosetteAngles.besselJ1</div>
+                </div>
+              </div>
+
+              <div class="credits-legend-card">
+                <div class="credits-badge">JT</div>
+                <div>
+                  <div><span class="credits-legend-name">Camille Jordan &amp; Robert Tarjan</span><span class="credits-legend-year">(1887 / 1975)</span></div>
+                  <div class="credits-legend-role">Topological Connected-Component &amp; Counter Auditing</div>
+                  <div class="credits-legend-file">PlateVerifier.verifyScreenInvariants</div>
+                </div>
+              </div>
+
+              <div class="credits-legend-card">
+                <div class="credits-badge">KT</div>
+                <div>
+                  <div><span class="credits-legend-name">Bronis&#322;aw Knaster &amp; Alfred Tarski</span><span class="credits-legend-year">(1928 / 1955)</span></div>
+                  <div class="credits-legend-role">Monotone Lattice Fixed-Point Screen Closure</div>
+                  <div class="credits-legend-file">HalftoneEngine (Stage 6 Closure)</div>
+                </div>
+              </div>
+
+              <div class="credits-legend-card">
+                <div class="credits-badge">NC</div>
+                <div>
+                  <div><span class="credits-legend-name">Hans E. J. Neugebauer &amp; CIE</span><span class="credits-legend-year">(1937 / 1976)</span></div>
+                  <div class="credits-legend-role">8-Primary Trilinear Reflectance &amp; 16-bit CIELAB Fidelity</div>
+                  <div class="credits-legend-file">HvsQuality.computeHvsQuality</div>
+                </div>
+              </div>
+
+              <div class="credits-legend-card">
+                <div class="credits-badge">MS</div>
+                <div>
+                  <div><span class="credits-legend-name">Georges Matheron &amp; Jean Serra</span><span class="credits-legend-year">(1964–1967)</span></div>
+                  <div class="credits-legend-role">Canonical Disk Opening &amp; Minimum-Aperture Physics</div>
+                  <div class="credits-legend-file">MeshPhysics.getCanonicalDiskOffsets &amp; HalftoneEngine</div>
+                </div>
+              </div>
+
+              <div class="credits-legend-card">
+                <div class="credits-badge">CK</div>
+                <div>
+                  <div><span class="credits-legend-name">Fergus Campbell &amp; Janusz Kulikowski</span><span class="credits-legend-year">(1966)</span></div>
+                  <div class="credits-legend-role">Human Visual System 45° Oblique-Effect Orientation Tuning</div>
+                  <div class="credits-legend-file">RosetteAngles.assignImageAwareRosetteSlots</div>
+                </div>
+              </div>
+
+              <div class="credits-legend-card">
+                <div class="credits-badge">FS</div>
+                <div>
+                  <div><span class="credits-legend-name">Robert Floyd &amp; Louis Steinberg</span><span class="credits-legend-year">(1976)</span></div>
+                  <div class="credits-legend-role">Serpentine Highlight &amp; Shadow Tail Error Dispersion</div>
+                  <div class="credits-legend-file">HalftoneEngine (Hybrid AM+FM)</div>
+                </div>
+              </div>
+
+              <div class="credits-legend-card">
+                <div class="credits-badge">NO</div>
+                <div>
+                  <div><span class="credits-legend-name">Nobuyuki Otsu</span><span class="credits-legend-year">(1979)</span></div>
+                  <div class="credits-legend-role">Exact Inter-Class Variance Bimodal Type Conditioning</div>
+                  <div class="credits-legend-file">BvgEdgeSnapper.snapChannelEdges</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Scene 3: Production Team -->
+            <div class="credits-scene">
+              <div class="credits-role-title">Produced &amp; Directed By</div>
+              <div class="credits-role-name">Shankar Ramamoorthy</div>
+              <div class="credits-role-desc">Vision, Screen-Shop Physics, SAATI Mesh Calibration, and Pressroom Truth</div>
+
+              <div class="credits-role-title">Architect, Optical Physicist &amp; Master Builder</div>
+              <div class="credits-role-name">Gemini</div>
+              <div class="credits-role-desc">Reciprocal-Lattice Moiré Mathematics, 16-bit CIELAB Modeling, Invariant Engines &amp; UXP Engineering</div>
+            </div>
+
+            <!-- Scene 4: Pressroom & Mathematical Invariants -->
+            <div class="credits-scene">
+              <div class="credits-tag">Pressroom &amp; Mathematical Invariants</div>
+
+              <div class="credits-role-title">Stencil Law &amp; Dot Integrity</div>
+              <div class="credits-role-desc">Rule of N Mesh Physics, D_min &ge; 2w + d Aperture Guarantee &amp; 100% Solid Sovereignty</div>
+
+              <div class="credits-role-title">Colorimetric Sovereignty</div>
+              <div class="credits-role-desc">Canonical 16-bit Engine CIELAB<br />(L: 0–32,768, a/b: 0–32,768, 16,384 neutral)</div>
+
+              <div class="credits-role-title">Soundtrack</div>
+              <div class="credits-role-desc">Vacuum Frame Seal, Floodbar Glide &amp; Crisp Off-Contact Peel</div>
+
+              <div class="credits-role-title">Pressroom Fuel</div>
+              <div class="credits-role-desc">Double Espresso, SAATI Monofilament &amp; Clean Film Positives</div>
+            </div>
+
+            <!-- Scene 5: Guild Colophon -->
+            <div class="credits-scene">
+              <div style="font-size: 15px; color: #e0a030; font-weight: 700; margin: 24px 0 14px 0; letter-spacing: 1px;">
+                &#9733; NO MESH WAS HARMED IN THE MAKING OF THIS SOFTWARE &#9733;
+              </div>
+              <div style="font-size: 13.5px; color: #888; margin-top: 16px; letter-spacing: 1.5px;">
+                ELECTROSAUR LABS &bull; OAKLAND / BERKELEY SERIGRAPHY TRADITION
+              </div>
+              <div style="font-size: 12px; color: #666; margin-top: 6px; letter-spacing: 1px;">
+                BENDAY ENGINE v0.2
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Easter Egg: 1879 Ben Day Rapid Shading Medium Broadside -->
+        <div id="manifesto-broadside" tabindex="-1" style="display: none; outline: none;">
+          <div class="manifesto-header">
+            <div class="manifesto-title">The Rapid Shading Medium</div>
+            <div class="manifesto-subtitle">1879 Broadside &bull; In Homage to Benjamin Henry Day Jr. (1838–1916)</div>
+          </div>
+          <div class="manifesto-body">
+            <p>On April 22, 1879, New York illustrator and engraver Benjamin Henry Day Jr. — son of the Penny Press publisher of <em>The Sun</em> — received U.S. Patent No. 214,493 for a transparent, flexible shading film molded with raised dots and lines.</p>
+
+            <p>Clamped into a micrometer hinge frame over engraver&rsquo;s zinc or lithographic stones, Ben Day&rsquo;s films let pressmen roll ink across selected highlights, shift the frame by thousandths of an inch to build rich midtones, and print four-color illusions from honest binary ink.</p>
+
+            <p>For nearly a century, Ben Day dots powered Sunday comic strips, pulp adventure covers, editorial maps, and pop-art serigraphy — proving that discrete dots, placed with geometric discipline, do not hide the medium; they celebrate it.</p>
+
+            <div class="manifesto-quote">
+              &ldquo;Every dot on film must survive the mesh on press: no phantom gray pixels, no blown-out highlights, no plugged shadow holes, and zero harmonic clash with the weave.&rdquo;
+            </div>
+
+            <p style="font-size: 16px; font-weight: 700; color: #fff; margin-top: 20px; margin-bottom: 16px; line-height: 1.6;">To Benjamin Henry Day Jr., and every screen printer pulling four honest screens through woven mesh: the dot lives on.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Confirm Overlay (hidden by default, matches Reveal) -->
+    <div id="confirm-overlay" style="display: none;">
+      <div id="confirm-box">
+        <h3 id="confirm-title">Confirm</h3>
+        <p id="confirm-message"></p>
+        <div class="confirm-buttons">
+          <button type="button" id="btn-confirm-cancel">Cancel</button>
+          <button type="button" id="btn-confirm-ok">OK</button>
         </div>
       </div>
     </div>

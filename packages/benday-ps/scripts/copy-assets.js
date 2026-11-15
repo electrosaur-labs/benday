@@ -47,4 +47,17 @@ if (fs.existsSync(htmlSrc)) {
   console.log('✓ Built index.html (inlined styles.css)');
 }
 
+// Copy src/assets/* -> dist/assets/*
+const assetsSrcDir = path.join(srcDir, 'assets');
+const assetsDstDir = path.join(distDir, 'assets');
+if (fs.existsSync(assetsSrcDir)) {
+  if (!fs.existsSync(assetsDstDir)) {
+    fs.mkdirSync(assetsDstDir, { recursive: true });
+  }
+  for (const file of fs.readdirSync(assetsSrcDir)) {
+    fs.copyFileSync(path.join(assetsSrcDir, file), path.join(assetsDstDir, file));
+  }
+  console.log('✓ Copied assets/');
+}
+
 console.log('Benday asset copying complete!');

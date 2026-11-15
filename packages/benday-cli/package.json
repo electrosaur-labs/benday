@@ -1,6 +1,6 @@
 {
   "name": "@electrosaur-labs/benday-cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Headless CMYK halftone runner, synthetic test-chart generator, and screen invariant auditor",
   "main": "src/cli.js",
   "bin": {

@@ -77,21 +77,28 @@ describe('BendayState, pngDataUrl & Reveal-Style BendayDialog UI', () => {
     }
   });
 
-  it('manages SAATI (TPI-µm) presets, Rule of N = 5.0 default, custom thread locks, and viewZoom ladder', () => {
+  it('manages SAATI (TPI-µm) presets (355-31 factory default), Rule of N = 5.0 default, custom thread locks, and viewZoom ladder', () => {
+    const defaultState = new BendayState({ dpi: 600 });
+    expect(defaultState.meshTpi).toBe(355);
+    expect(defaultState.threadDiaUm).toBe(31);
+    expect(defaultState.getMeshPresetId()).toBe('355-31');
+    expect(defaultState.isModified()).toBe(false);
+    expect(defaultState.meshSpec.lpiNatural).toBeCloseTo(71.17, 2);
+
     const state = new BendayState({ meshTpi: 230, dpi: 600 });
     expect(state.ruleOfN).toBe(5.0);
     expect(state.threadDiaUm).toBe(48);
     expect(state.getMeshPresetId()).toBe('230-48');
     expect(state.previewZoom).toBe(0); // Loupe disabled by default
     expect(state.viewZoom).toBe('fit');
-    expect(state.isModified()).toBe(false);
+    expect(state.isModified()).toBe(true); // 230-48 differs from 355-31 factory default
     expect(state.meshSpec.lpiNatural).toBeCloseTo(46.0, 3);
     expect(state.meshSpec.dMinPx).toBe(5);
 
-    // Select SAATI 355-31 Hi-R preset
+    // Select SAATI 355-31 Hi-R factory preset -> unmodified!
     state.setMeshPreset(355, 31);
     expect(state.getMeshPresetId()).toBe('355-31');
-    expect(state.isModified()).toBe(true);
+    expect(state.isModified()).toBe(false);
 
     // Custom heavy 40 µm roll on 355 TPI -> preset becomes 'custom'
     state.setThreadDiaUm(40);
@@ -117,8 +124,8 @@ describe('BendayState, pngDataUrl & Reveal-Style BendayDialog UI', () => {
     expect(state.viewZoom).toBe(1);
 
     state.resetToDefaults();
-    expect(state.meshTpi).toBe(230);
-    expect(state.threadDiaUm).toBe(48);
+    expect(state.meshTpi).toBe(355);
+    expect(state.threadDiaUm).toBe(31);
     expect(state.ruleOfN).toBe(5.0);
     expect(state.viewZoom).toBe(1); // View magnification preserved across parameter reset
     expect(state.isModified()).toBe(false);
@@ -197,7 +204,6 @@ describe('BendayState, pngDataUrl & Reveal-Style BendayDialog UI', () => {
       docName: 'PortraitPoster.tif',
       docWidth: W,
       docHeight: H,
-      meshTpi: 230,
       dpi: 600,
     });
     const dialog = new BendayDialog(doc, state, {
@@ -217,16 +223,22 @@ describe('BendayState, pngDataUrl & Reveal-Style BendayDialog UI', () => {
     const originalBadge = doc.getElementById('original-badge');
     const helpBtn = doc.getElementById('btn-help-toggle');
 
-    // Reveal-style stacked 3-button header without a Cancel button (Esc dismisses)
-    expect(doc.getElementById('btn-benday-cancel')).toBeNull();
+    // Reveal-style stacked 5-button top header: Reread, Reset, Save Config, Load Config, Halftone (no Cancel button)
     const headerBtnIds = Array.from(doc.querySelectorAll('#knobs-header button')).map((b) => b.id);
-    expect(headerBtnIds).toEqual(['btn-reread', 'btn-reset-top', 'btn-benday-apply']);
+    expect(headerBtnIds).toEqual([
+      'btn-reread',
+      'btn-reset-top',
+      'btn-save-config',
+      'btn-load-config',
+      'btn-benday-apply',
+    ]);
+    expect(doc.getElementById('btn-benday-apply').textContent).toBe('Halftone');
 
     expect(resetBtn.disabled).toBe(true);
-    expect(meshPreset.value).toBe('230-48');
+    expect(meshPreset.value).toBe('355-31');
     expect(customMeshRow.classList.contains('visible')).toBe(false);
-    expect(doc.getElementById('stat-mesh-lpi').textContent).toContain('46.0 LPI');
-    expect(doc.getElementById('phys-open-area').textContent).toContain('32.0%');
+    expect(doc.getElementById('stat-mesh-lpi').textContent).toContain('71.2 LPI');
+    expect(doc.getElementById('phys-open-area').textContent).toContain('32.1%');
     expect(doc.getElementById('moire-status-badge').textContent).toBe('ROSETTE SAFE');
 
     const chanC = new Uint8Array(N);
@@ -266,11 +278,11 @@ describe('BendayState, pngDataUrl & Reveal-Style BendayDialog UI', () => {
     expect(originalBadge.classList.contains('visible')).toBe(false);
     expect(previewImg.getAttribute('src')).toBe(initialSrc);
 
-    // SAATI mesh preset selection (355-31 Hi-R) & Custom (TPI / µm) inline row .visible toggle
-    meshPreset.value = '355-31';
+    // SAATI mesh preset selection (230-40 Hi-R) & Custom (TPI / µm) inline row .visible toggle
+    meshPreset.value = '230-40';
     meshPreset.dispatchEvent(new win.Event('change'));
-    expect(state.meshTpi).toBe(355);
-    expect(state.threadDiaUm).toBe(31);
+    expect(state.meshTpi).toBe(230);
+    expect(state.threadDiaUm).toBe(40);
     expect(customMeshRow.classList.contains('visible')).toBe(false);
 
     meshPreset.value = 'custom';
@@ -283,7 +295,7 @@ describe('BendayState, pngDataUrl & Reveal-Style BendayDialog UI', () => {
     expect(state.getMeshPresetId()).toBe('custom');
 
     doc.getElementById('btn-mesh-revert').click();
-    expect(state.getMeshPresetId()).toBe('230-48');
+    expect(state.getMeshPresetId()).toBe('355-31');
     expect(customMeshRow.classList.contains('visible')).toBe(false);
 
     // Zoom controls: Fit -> 50% (30x45) -> 100% (60x90) -> 200% (120x180) + Cmd+0 shortcut
@@ -360,12 +372,9 @@ describe('BendayState, pngDataUrl & Reveal-Style BendayDialog UI', () => {
     expect(warningsBox.style.display).toBe('none');
     expect(helpBoxes.every((el) => !el.classList.contains('visible'))).toBe(true);
 
-    // Escape in solo screen view exits to composite first; Escape in composite view invokes onCancel
+    // Single-Escape dismiss: 1 Escape immediately invokes onCancel even when viewing a solo C/M/Y/K screen!
     doc.querySelector('[data-preview-mode="C"]').click();
     expect(state.previewMode).toBe('C');
-    doc.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape' }));
-    expect(state.previewMode).toBe('composite');
-    expect(cancelledCount).toBe(0);
     doc.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape' }));
     expect(cancelledCount).toBe(1);
 

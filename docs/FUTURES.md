@@ -1,27 +1,29 @@
-# Electrosaur: Benday — Post-v0.1 Roadmap & Deferred Specifications
+# Electrosaur: Benday — Roadmap & Deferred Specifications
 
-This document records the engineering designs and mathematical specifications deferred past the frozen **Benday v0.1** release so that all architectural work solved during v0.1 design carries forward cleanly into **v0.2** and **v0.3**.
+This document records the engineering designs and mathematical specifications across **Benday v0.2** (shipped) and **v0.3+** (planned).
 
-## Scope Boundary: v0.1 (Shipped) vs. Post-v0.1
+## Scope Boundary: v0.1 + v0.2 (Shipped) vs. v0.3+ (Deferred)
 
-**Benday v0.1** delivers:
-- Zero-dependency mesh-aperture physics (`MeshPhysics.js`) with isotropic and anisotropic `(dpiX, dpiY)` support.
-- Bias-tolerant CMYK rosette geometry and analytical 2D reciprocal-lattice harmonic moiré analysis (`RosetteAngles.js`).
-- Symmetric Euclidean halftoning with `100%` solid linework sovereignty, `0%` paper lock, Hybrid AM/FM / Cutoff / Clamp tail modes, and exact morphological $B_{D_{\min}}$ dot and shadow-hole guarantees (`HalftoneEngine.js` + `PlateVerifier.js`).
-- Non-destructive Photoshop UXP command plugin (`@electrosaur-labs/benday-ps`) and headless TIFF/PGM CLI (`@electrosaur-labs/benday-cli`).
+**Shipped in Benday v0.1 + v0.2:**
+- Zero-dependency mesh-aperture physics (`MeshPhysics.js`) with isotropic and anisotropic `(dpiX, dpiY)` support and 20-roll `SAATI_MESH_PRESETS`.
+- Bias-tolerant CMYK rosette geometry, `ROSETTE_PRESETS` (`Auto`, `Image-Aware`, `FTA +7.5°`, `ISO Litho`, `Flamenco 45°`, `Manual…`), `< 2 ms` Campbell–Kulikowski `assignImageAwareRosetteSlots`, and analytical 2D reciprocal-lattice harmonic moiré analysis (`RosetteAngles.js`).
+- Symmetric Euclidean halftoning with **Press Dot Gain pullback (`0%–20%`)**, `100%` solid linework sovereignty, `0%` paper lock, Hybrid AM/FM / Cutoff / Clamp tail modes, and exact morphological $B_{D_{\min}}$ dot and shadow-hole guarantees (`HalftoneEngine.js` + `PlateVerifier.js`).
+- **Bimodal Variance-Gated (`BVG`)** crisp type & vector edge snapping (`5 × 5` Otsu $\eta \ge 0.82$) + 2-pass Chamfer narrow Rich-Black type UCR (`BvgEdgeSnapper.js`).
+- **Save / Load `-benday.json` Press Configs** & `.psd` layer/XMP manifest embedding (`PressConfig.js`), **Hold-to-Blink `Original` Comparator**, **16-bit CIELAB Perceptual `HVS ΔE` & `Gray Steps/Cell` Telemetry** (`HvsQuality.js`), and the **`★ Credits ★` Dedication to Benjamin Henry Day Jr. (1879)** (`CreditsController.js`).
 
-The eight specifications below are scheduled for **v0.2** and **v0.3**:
+The remaining specifications below are scheduled for **v0.3+**:
 
-| Target | Module / Feature | Package(s) | Primary Purpose |
+| Target | Module / Feature | Package(s) | Status / Primary Purpose |
 |---|---|---|---|
-| **v0.2** | Press Dot Gain Compensation | `benday-core`, `benday-ps`, `benday-cli` | Single-slider (`0%–20%`) parabolic midtone dot-gain pullback ($t' = t - 4 \Delta G \, t(1-t)$) keeping `Original` artwork true on screen |
-| **v0.2** | `FftMoireAnalyzer.js` & Image-Aware Rosette Assignment | `benday-core`, `benday-ps`, `benday-cli` | `512 × 512` Radix-2 2D FFT spatial moiré simulator, `< 300 ms` angle solvers, and `< 2 ms` image-aware `{15°, 45°, 60°, 75°}` channel-slot permutation |
-| **v0.2** | Rosette Presets, Bias Slop Bar & `1:1`/`2:1` Viewport Polish | `benday-ps`, `benday-core` | Rosette Angle Presets dropdown (`Auto`, `FTA +7.5°`, `ISO Litho`, `Flamenco 45°`, `Manual…`), visual stretcher-slop error bar (`±2°`), and faster `100%`/`200%` viewport updates |
-| **v0.2** | `meshPreflight.js` | `benday-core`, `benday-ps`, `benday-cli` | Standalone highlight-washout & shadow-bridge detector, X-Ray diagnostic overlay, and `< 50 ms` in-place healer for external separations |
-| **v0.2** | Rich Black, Choke & TAC Control | `benday-core`, `benday-ps`, `benday-cli` | Configurable Rich Black synthesis with `1–3 px` C/M/Y underbedding choke and `260%–300%` wet-on-wet TAC mud ceiling |
-| **v0.2** | `BvgEdgeSnapper.js` (`BVG`) | `benday-core`, `benday-ps`, `benday-cli` | Bimodal Variance-Gated (`BVG`) text/linework edge snapping and Rich-Black type UCR without sharpening photographic grain |
-| **v0.2+** | Direct Inkjet Film-Positive Spooler ("Hokusai") | `benday-cli`, `benday-ps`, `hokusai` | Headless `libgutenprint` (`Predithered` raw `ESC/P2` / `PCL3GUI`) OS-driver bypass over `lp -o raw` / TCP `9100` / `libusb`, UV droplet-weight dial, multi-slot All-Black mapping, and anisotropic `1-bit` film furniture |
-| **v0.3** | `Reveal` Spot-Color Halftone Bridge | `benday-core`, `reveal` | Mesh-aware halftoning for tonal spot-color separations and choked white underbase screens |
+| **Shipped (v0.2)** | Press Dot Gain Compensation (`dotGain`) | `benday-core`, `benday-ps`, `benday-cli` | **Shipped** — Parabolic midtone pullback ($t' = t - 4 \Delta G \, t(1-t)$) keeping `Original` true on screen |
+| **Shipped (v0.2)** | `BvgEdgeSnapper.js` (`BVG`) | `benday-core`, `benday-ps`, `benday-cli` | **Shipped** — Bimodal Variance-Gated text/linework edge snapping & narrow Rich-Black UCR |
+| **Shipped (v0.2)** | `PressConfig.js`, Rosette Presets, Image-Aware Slots, Hold-to-Blink & `HvsQuality.js` | `benday-core`, `benday-ps`, `benday-cli` | **Shipped** — `-benday.json` + `.psd` XMP, `< 2 ms` image-aware slots, `400 ms` blink, 16-bit CIELAB `HVS ΔE` |
+| **v0.3** | `FftMoireAnalyzer.js` & Subject-Texture FFT | `benday-core`, `benday-ps`, `benday-cli` | `512 × 512` Radix-2 2D FFT spatial moiré simulator, `< 300 ms` angle solvers, and object-texture avoidance |
+| **v0.3** | `meshPreflight.js` | `benday-core`, `benday-ps`, `benday-cli` | Standalone highlight-washout & shadow-bridge detector, X-Ray diagnostic overlay, and `< 50 ms` in-place healer for external separations |
+| **v0.3** | Rich Black Synthesis, Choke & TAC Control | `benday-core`, `benday-ps`, `benday-cli` | Configurable Rich Black synthesis with `1–3 px` C/M/Y underbedding choke and `260%–300%` wet-on-wet TAC mud ceiling |
+| **v0.3** | Bias Slop Whisker Bar & `2×` Raster Supersampling | `benday-ps`, `benday-core` | Visual stretcher-slop error bar (`±2°`) and optional `2×` output raster supersampling for `150–300 DPI` sources |
+| **v0.3+** | Direct Inkjet Film-Positive Spooler ("Hokusai") | `benday-cli`, `benday-ps`, `hokusai` | Headless `libgutenprint` (`Predithered` raw `ESC/P2` / `PCL3GUI`) OS-driver bypass over `lp -o raw` / TCP `9100` / `libusb`, UV droplet-weight dial, multi-slot All-Black mapping, and anisotropic `1-bit` film furniture |
+| **v0.3+** | `Reveal` Spot-Color Halftone Bridge | `benday-core`, `reveal` | Mesh-aware halftoning for tonal spot-color separations and choked white underbase screens |
 
 ---
 
@@ -58,7 +60,7 @@ In v0.1, `analyzeMoire` (`RosetteAngles.js`) analytically evaluates 2D reciproca
    - **Hann-weighted mean removal:** Subtract the window-weighted mean $\bar{I}_W = \frac{\sum I \cdot W}{\sum W}$ prior to windowing, transforming $(I - \bar{I}_W) \cdot W$, and zero the central DC disk ($r_{\text{DC}} = 3\text{ bins}$).
    - **Carrier harmonic notches:** Zero circular notches of radius $r_{\text{notch}} = 4\text{ bins}$ around all fundamental and low-order screen harmonics ($|j|, |k| \le 4$) and mesh harmonics ($|m_1|, |m_2| \le 2$) so normal halftone dot visibility is not penalized as moiré.
    - **Sub-screen visual passband:** Integrate residual spectral energy strictly inside the visible low-frequency passband:
-     $$0 < \|\mathbf{f}\| \le \min(0.80 \cdot \text{lpi},\; 25.4\text{ cpi})$$
+     $$0 < \|\mathbf{f}\| \le \min(0.80 \cdot \text{LPI},\; 25.4\text{ cpi})$$
    - **Quadrature quarter-pitch `E_dcLock` pass:** At a direct `0°` commensurate clash (such as `lpi = meshTpi / 4` aligned with the threads), the beat frequency approaches $f_{\text{beat}} \to 0$, producing a stationary screen-wide density shift that would otherwise sit inside the $r_{\text{DC}} = 3$ DC mask. Evaluating `H(x, y)` at two quadrature spatial phases $(0, 0)$ and $(p_s/4, p_s/4)$ measures $E_{\text{dcLock}} = |\bar{I}_W^{(0)} - \bar{I}_W^{(1/4)}|^2$ and adds it to the moiré objective, ensuring `0°` commensurate locks are always penalized.
 
 5. **Interactive Solvers (`< 300 ms` Target):**
@@ -243,8 +245,8 @@ Standard coated offset CMYK profiles (`U.S. Web Coated (SWOP) v2`, `GRACoL`) alr
    - Render `200%` (`2:1`) zoomed viewports at native `1×` crop dimensions (`420 × 360` instead of `840 × 720`) with crisp nearest-neighbor (`image-rendering: pixelated`) display scaling — cutting `200%` PNG encoding bytes by `4×` — and coalesce rapid slider drag events to `16 ms` animation frames while reusing preallocated scratch buffers inside `HalftoneEngine`.
    - **Optional `2×` Output Raster Supersampling for `150–300 DPI` Sources:** Because a `45–60 LPI` halftone screen only needs `~100–120 PPI` of optical source detail (`2 × LPI`), upsampling the *binary halftone output grid* (`300 → 600 DPI`) quadruples gray steps per cell (`43 → 170` steps) and rounds Euclidean dot contours cleanly without needing higher-resolution source photography.
 
-4. **Save / Load Press Config (`.json` Shop Presets):**
-   - Match `Reveal`'s **Save Config / Load Config** workflow (plus embedded `.psd` layer metadata round-tripping) so a print shop can save named press setups (e.g. `Shop-230-Poster.benday.json`, `Shop-355HiR-FineArt.benday.json`) capturing `(meshTpi, threadDiaUm, meshAngleDeg, ruleOfN, lpiOverride, anglesOverride, tailMode, dotGain)` and reapply them in one click across jobs or via `benday halftone --config`.
+4. **Save / Load Press Config (`-benday.json` Shop Presets):**
+   - Match `Reveal`'s **Save Config / Load Config** workflow (plus embedded `.psd` layer/XMP metadata manifests) so a print shop can save named press setups (e.g. `Shop-230-Poster-benday.json`, `Shop-355HiR-FineArt-benday.json`) capturing `(meshTpi, threadDiaUm, meshAngleDeg, ruleOfN, lpiOverride, anglesOverride, tailMode, dotGain)` and reapply them in one click across jobs or via `benday halftone --config`.
 
 5. **Perceptual Output Fidelity Score (`HVS Viewing-Distance ΔE` & Gray-Step Telemetry):**
    - Raw pixel-by-pixel `ΔE` is meaningless on binary `{0, 255}` halftones (every pixel is pure ink or pure paper), **but** convolving both the continuous-tone `Original` and the `Halftone` SWOP proof with a Gaussian low-pass kernel matched to human visual acuity at normal viewing distance (`σ ≈ 1.5 × cellPitchPx`) yields a physically meaningful **Perceptual Halftone `ΔE`** alongside **Tonal Steps per Cell (`(DPI / LPI)²`)** and **Tail Rescue `%`** in the top stats bar (mirroring `Reveal`'s `ΔE · DNA · Match %` header).

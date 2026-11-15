@@ -18,8 +18,10 @@ if (!fs.existsSync(distDir)) {
   process.exit(1);
 }
 
-if (fs.existsSync(outputFile)) {
-  fs.unlinkSync(outputFile);
+for (const entry of fs.readdirSync(rootDir)) {
+  if (/^benday-v.*\.ccx$/.test(entry)) {
+    fs.unlinkSync(path.join(rootDir, entry));
+  }
 }
 
 execSync(`cd "${distDir}" && zip -r "${outputFile}" *`, { stdio: 'inherit' });

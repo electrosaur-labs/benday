@@ -20,13 +20,16 @@ Traditionally, screen printers bridged this gap by exporting files out of Photos
 - **Bias-Tolerant CMYK Rosette & 2D Harmonic Moiré Guard** — Centers your mesh stretch bias angle `θ` inside the `30°` gap of the CMYK rosette (`C = θ + 15°`, `K = θ + 45°`, `Y = θ + 60°`, `M = θ + 75°` mod `90°`), maintaining `>= 15.0°` nominal clearance and `>= 13.0°` clearance across `±2.0°` of stretcher slop. Evaluates 2D reciprocal-lattice harmonics (`|j|, |k| <= 8` against mesh harmonics `|m1|, |m2| <= 4`) weighted by square-aperture `sinc` and circular-dot Airy (`2·J₁(x)/x`) contrast to flag subtle harmonic beats before you burn a screen.
 - **Symmetric Euclidean Screen with Calibrated Tonal Linearity & Exact Morphological Openness** — Generates round-to-checkerboard-to-inverse-round Euclidean screens with empirical discrete tone calibration (eliminating `51%–60%` corner-cusp bridging spikes and inter-angle dot-pitch drift) where every halftone dot and every enclosed halftone shadow hole is an exact union of canonical discrete disks $B_{D_{\min}}$ (`0` 1-pixel diamond tips, `0` clipped edge shards, `0` sub-mesh pinholes).
 - **Three Highlight / Shadow Tail Modes** — Choose **Hybrid AM/FM** (default serpentine Floyd-Steinberg error diffusion over canonical minimum-size dots and shadow holes in tones finer than the AM floor), **Cutoff** (clean drop to `0%` / solid `100%`), or **Clamp** (hold minimum dot / hole across active tails).
-- **100% Solid Linework & 0% Paper Guarantees** — Channel pixels at `100%` ink (`255`) pass straight through at native 1-pixel resolution without halftone sawtoothing, pure `{0, 255}` graphic counters stay open, and `0%` paper margins remain free of stray dots.
-- **Non-Destructive Photoshop UXP Dialog** — Resizable `1100 × 850` two-column workspace with `Fit / 50% / 100% / 200%` scrollable viewport virtualization, calibrated SWOP Coated overprint proofing, `< 2 ms` click-to-compare `ORIGINAL` toggle, bottom **Screen Strip** (`Composite + C/M/Y/K` film-positive solo swatches), single-undo top CMYK layer output, and automatic re-run detection that hides and replaces prior `Benday Halftone*` layers without re-halftoning them.
+- **Press Dot Gain Compensation (`0%–20%`)** — Single-slider parabolic midtone pullback ($t_{\text{film}} = t - 4 \Delta G \, t(1 - t)$) compensating for extra screen-printing mechanical/optical dot gain without washing out the continuous-tone `Original` artwork on screen, while keeping `0%` clear substrate and `100%` solid ink as exact mathematical fixed points.
+- **Crisp Type & Linework (`BVG`) & 100% Solid / 0% Paper Guarantees** — Channel pixels at `100%` ink (`255`) pass straight through at native 1-pixel resolution, pure `{0, 255}` graphic counters stay open, and `0%` paper margins remain free of stray dots. Optional **Bimodal Variance-Gated (`BVG`)** pre-conditioning (`5 × 5` Otsu separability $\eta \ge 0.82$) snaps anti-aliased vector/type rims cleanly and promotes narrow ICC Rich-Black body type (`< 2 × cellPitchPx`) to crisp solo `K = 255` (`C = M = Y = 0`) while leaving photographic gradients, skin tones, film grain, and wide Rich-Black fills completely untouched.
+- **Rosette Angle Presets & `< 2 ms` Image-Aware Slot Assignment** — Built-in presets (`Auto`, `Image-Aware`, `FTA +7.5°`, `ISO Litho`, `Flamenco 45°`, and `Manual…`), including `< 2 ms` Campbell–Kulikowski oblique-effect (`45°`) and 2-ink co-occurrence channel-slot assignment across `{θ+15°, θ+45°, θ+60°, θ+75°}`.
+- **Save / Load `-benday.json` Press Configs & `.psd` Metadata Manifests** — Portable shop preset files (`Save Config` / `Load Config` in Photoshop defaulting to `<FILENAME>-benday.json` and `--config` / `--save-config` in the CLI) plus automatic per-layer and document XMP manifest embedding on commit (used to guard against re-halftoning flattened Benday output).
+- **16-bit CIELAB Perceptual `HVS ΔE` Telemetry & Non-Destructive Photoshop UXP Dialog** — Resizable `1100 × 850` two-column workspace with `Fit / 50% / 100% / 200%` scrollable viewport virtualization, calibrated SWOP Coated overprint proofing, live **HVS Viewing-Distance `ΔE`** (evaluated in canonical 16-bit CIELAB) and **Gray Steps/Cell** readouts, `< 2 ms` click-to-toggle **and** press-and-hold (`400 ms` blink) `ORIGINAL` comparator, bottom **Screen Strip** (`Composite + C/M/Y/K` film-positive solo swatches), theatrical **`★ Credits ★`** crawl dedicated to **Benjamin Henry Day Jr. (1879)**, single-undo top CMYK layer output, and automatic re-run detection.
 - **Zero-Dependency Core** — `@electrosaur-labs/benday-core` is 100% pure JavaScript with zero external dependencies and zero Node.js built-ins.
 
-## Why No Tone Curves Inside Benday?
+## Why No Multi-Point Tone Curves Inside Benday?
 
-Benday is deliberately a **focused, mesh-aware halftoner**, not a replacement color editor. Photoshop already provides industry-standard, non-destructive **Curves** adjustment layers, per-channel CMYK tone controls, GCR/UCR black generation, and ICC press profiles (`Edit → Convert to Profile...`). Keeping tone and dot-gain curves in native Photoshop adjustment layers beneath your `Benday Halftone` layer avoids duplicating Photoshop's color engine inside a modal dialog, keeps your tonal edits live and inspectable in your `.psd`, and lets Benday focus strictly on faithful tonal linearity and physical mesh-aperture geometry.
+Benday is deliberately a **focused, mesh-aware halftoner**, not a replacement color editor. Photoshop already provides industry-standard, non-destructive **Curves** adjustment layers, per-channel CMYK tone controls, GCR/UCR black generation, and ICC press profiles (`Edit → Convert to Profile...`). Rather than duplicating multi-point curve editors inside a modal dialog, Benday provides a single physical **Extra Press Dot Gain (`0%–20%`)** midtone pullback right before screen generation — so you can compensate for the extra `+10%–15%` mechanical dot gain of `45–65 LPI` screen printing while keeping your `Original` continuous-tone artwork true and un-washed-out on screen.
 
 ## Packages & Architecture
 
@@ -47,12 +50,12 @@ Benday is deliberately a **focused, mesh-aware halftoner**, not a replacement co
 
 ### Photoshop UXP Plugin
 
-1. Build or download `benday-v0.1.0.ccx` (see [packages/benday-ps/README.md](packages/benday-ps/README.md) for `.ccx` packaging and Adobe UXP Developer Tool setup).
-2. Double-click `benday-v0.1.0.ccx` to install via Creative Cloud Desktop.
-3. In Photoshop (`23.3.0` or later), convert your artwork to your shop CMYK profile via **Edit → Convert to Profile...** (at `300–600+ DPI`).
-4. Run **Plugins → Electrosaur: Benday → Benday...**, select your SAATI `(TPI - µm)` mesh preset and Rule of N, inspect the `Fit / 50% / 100% / 200%` preview (click to compare with `ORIGINAL`), and click **Apply Halftone**.
+1. Build or download `benday-v0.2.0.ccx` (see [packages/benday-ps/README.md](packages/benday-ps/README.md) for `.ccx` packaging and Adobe UXP Developer Tool setup).
+2. Double-click `benday-v0.2.0.ccx` to install via Creative Cloud Desktop.
+3. In Photoshop (`23.3.0` or later), convert your single-layer flattened artwork to your shop CMYK profile via **Edit → Convert to Profile...** (at `300–600+ DPI`).
+4. Run **Plugins → Electrosaur: Benday → Benday...**, select your SAATI `(TPI - µm)` mesh preset, Rule of N, optional **Dot Gain (`%`)**, **Crisp Type & Linework (`BVG`)**, or **Rosette Preset**, inspect the `Fit / 50% / 100% / 200%` preview (click to toggle or press-and-hold to blink `ORIGINAL`), and click **Apply Halftone**.
 
-For a complete press-oriented walkthrough, read the **[Benday User Guide](docs/USER-GUIDE.md)**. For post-v0.1 roadmap designs (`FftMoireAnalyzer`, external separation preflight X-Ray, Rich Black choke/TAC, Bimodal Variance-Gated `BVG` text edge snapping, anisotropic film-positive output, and `Reveal` spot-color halftoning), see **[Post-v0.1 Roadmap & Futures](docs/FUTURES.md)**.
+For a complete press-oriented walkthrough, read the **[Benday User Guide](docs/USER-GUIDE.md)**. For post-v0.2 roadmap designs (`FftMoireAnalyzer`, external separation preflight X-Ray, Rich Black choke/TAC, anisotropic film-positive spooling via `Hokusai`, and `Reveal` spot-color halftoning), see **[Roadmap & Futures](docs/FUTURES.md)**.
 
 ### Command-Line Interface (CLI)
 
@@ -61,14 +64,14 @@ git clone https://github.com/electrosaur-labs/benday.git
 cd benday
 npm install
 
-# Inspect mesh aperture physics, auto LPI, and rosette clearance for 230 TPI @ 600 DPI
+# Inspect mesh aperture physics, auto LPI, gray steps/cell, and rosette clearance for 230 TPI @ 600 DPI
 npm run benday -- spec --mesh 230 --dpi 600
 
-# Halftone a 4-channel CMYK uncompressed TIFF and split individual C/M/Y/K screen TIFFs
-npm run benday -- halftone input-cmyk.tif -o output-cmyk.tif --mesh 230 --n 5.0 --split-screens ./screens
+# Halftone a 4-channel CMYK TIFF with 10% dot-gain pullback, BVG crisp type, and Image-Aware rosette
+npm run benday -- halftone input-cmyk.tif -o output-cmyk.tif --mesh 230 --n 5.0 --dot-gain 10 --bvg --rosette-preset image-aware --split-screens ./screens
 
-# Generate a synthetic CMYK test ramp and audit all 4 screens for press invariants
-npm run benday -- halftone synthetic:ramp -o ramp.tif --mesh 305 --dpi 600
+# Save a reusable shop press preset (-benday.json) and run with --config
+npm run benday -- halftone synthetic:ramp -o ramp.tif --mesh 305 --dpi 600 --save-config shop-305-benday.json
 npm run benday -- verify ramp.tif --src synthetic:ramp --mesh 305 --dpi 600
 ```
 
@@ -93,18 +96,17 @@ Measured performance on Apple Silicon macOS (Node.js v25.9.0, single-threaded pu
 | `8" × 10"` @ `300 DPI` (4 CMYK screens, `230 TPI`) | `2400 × 3000` | `28.80 MP` | `3.43 s` (`0.86 s`/screen) | `314.4 MB` | `PASS (0 / 0)` |
 | `6" × 8"` @ `600 DPI` / `12" × 16"` @ `300 DPI` (`305 TPI`) | `3600 × 4800` | `69.12 MP` | `11.66 s` (`2.91 s`/screen) | `726.9 MB` | `PASS (0 / 0)` |
 
-## Roadmap & Post-v0.1 Specifications
+## Roadmap & Post-v0.2 Specifications
 
-Benday v0.1 generates separated `{0, 255}` CMYK halftone screens onto a non-destructive Photoshop CMYK layer and uncompressed 1-channel or 4-channel TIFF files via the CLI (with physical-inch anisotropic `dpiX`/`dpiY` support already built into the core engine). Planned for **v0.2+** are:
+Benday **v0.2** ships press dot-gain pullback (`dotGain`), Bimodal Variance-Gated (`BVG`) text/linework snapping & narrow Rich-Black UCR (`BvgEdgeSnapper.js`), Rosette Angle Presets + `< 2 ms` image-aware slot assignment (`RosetteAngles.js`), portable `-benday.json` + `.psd` XMP press configs (`PressConfig.js`), hold-to-blink `Original` comparison, 16-bit CIELAB perceptual `HVS ΔE` & gray-step telemetry (`HvsQuality.js`), and the **`★ Credits ★`** crawl dedicated to **Benjamin Henry Day Jr. (1879)**. Planned for **v0.3+** are:
 
 - `512 × 512` Radix-2 2D FFT spatial moiré analysis and `< 300 ms` automatic screen/rosette angle solvers (`FftMoireAnalyzer.js`)
 - Standalone highlight-washout & shadow-bridge preflight X-Ray and `< 50 ms` healer for external separations (`meshPreflight.js`)
 - Rich Black synthesis with automatic `1–3 px` C/M/Y underbedding choke and wet-on-wet TAC mud control
-- Bimodal Variance-Gated (`BVG`) text edge snapping and Rich-Black type UCR (`v0.2`)
 - Direct inkjet 1-bit film-positive export (`720 × 1440` / `1440 × 2880` DPI, registration targets, screen slugs, exposure wedges, and UV-blocking multi-channel ink mixing for printers such as the Epson Stylus Pro 3880)
 - `Reveal` spot-color and white underbase halftoning integration (**v0.3**)
 
-See **[docs/FUTURES.md](docs/FUTURES.md)** for full post-v0.1 technical specifications, **[docs/SUITE-SYNERGY.md](docs/SUITE-SYNERGY.md)** for the bidirectional `Benday ↔ Reveal` cross-pollination roadmap, and **[docs/HOKUSAI.md](docs/HOKUSAI.md)** for **Hokusai** *(dedicated to William Henry Fox Talbot)* — the planned direct inkjet film-positive spooler ("RIP Killer").
+See **[docs/FUTURES.md](docs/FUTURES.md)** for full post-v0.2 technical specifications, **[docs/SUITE-SYNERGY.md](docs/SUITE-SYNERGY.md)** for the bidirectional `Benday ↔ Reveal` cross-pollination roadmap, and **[docs/HOKUSAI.md](docs/HOKUSAI.md)** for **Hokusai** *(dedicated to William Henry Fox Talbot)* — the planned direct inkjet film-positive spooler ("RIP Killer").
 
 ## Development
 
@@ -120,13 +122,13 @@ npm run test:cli
 # Build Photoshop UXP bundle into packages/benday-ps/dist/
 npm run build:ps
 
-# Build and package benday-v0.1.0.ccx
+# Build and package benday-v0.2.0.ccx
 npm run package:ps
 ```
 
 ## Credits
 
-Conceived and directed by Shankar R., a screen printer. Architecture, design, and code by Gemini. Uses no AI at runtime.
+Dedicated to **Benjamin Henry Day Jr. (1838–1916)**, inventor of the 1879 Ben Day Rapid Shading Medium. Conceived and directed by Shankar R., a screen printer. Architecture, design, and code by Gemini. Uses no AI at runtime.
 
 ## License
 

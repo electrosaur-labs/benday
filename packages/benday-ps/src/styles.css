@@ -49,7 +49,6 @@ body {
   display: flex;
   flex-direction: column;
   padding: 8px;
-  gap: 6px;
   min-width: 0;
   min-height: 0;
 }
@@ -59,6 +58,7 @@ body {
   align-items: center;
   gap: 8px;
   padding: 4px 0;
+  margin-bottom: 6px;
   border-bottom: 1px solid #444;
   font-size: 11px;
   color: #999;
@@ -88,6 +88,12 @@ body {
 
 #stat-min-dot {
   color: #e0c97f;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+#hvs-telemetry {
+  color: #9ad8b8;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -187,6 +193,7 @@ body {
 #preview-stage {
   flex: 1 1 0;
   min-height: 0;
+  margin-bottom: 6px;
   position: relative;
   display: flex;
 }
@@ -262,6 +269,27 @@ body {
   text-align: center;
   padding: 16px;
   pointer-events: none;
+}
+
+#preview-busy-badge {
+  display: none;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 25;
+  padding: 3px 9px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  color: #ffd078;
+  background: rgba(24, 24, 24, 0.88);
+  border: 1px solid #e0a030;
+  pointer-events: none;
+}
+
+#preview-busy-badge.visible {
+  display: block;
 }
 
 #original-badge {
@@ -407,12 +435,12 @@ body {
 
 .top-action-btn {
   width: 100%;
-  height: 32px;
-  margin: 0 0 6px 0;
+  height: 30px;
+  margin: 0 0 5px 0;
   padding: 4px 8px;
   border-radius: 3px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   border: 1px solid transparent;
   display: flex;
@@ -455,6 +483,19 @@ body {
   border: 1px solid #a08040;
 }
 
+#btn-save-config,
+#btn-load-config {
+  background: #241a3a;
+  border: 1px solid #5a3a9a;
+  color: #b090f0;
+}
+
+#btn-save-config:hover:not(:disabled),
+#btn-load-config:hover:not(:disabled) {
+  background: #2e2248;
+  border: 1px solid #7050b0;
+}
+
 #btn-benday-apply {
   background: #1a3a2a;
   border: 1px solid #307050;
@@ -472,20 +513,60 @@ body {
   flex: 1 1 0;
   min-height: 0;
   overflow-y: auto;
-  padding-top: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  padding-top: 8px;
+  padding-right: 2px;
+  display: block;
 }
 
 .knob-section {
+  display: block;
   background: #2f2f2f;
   border: 1px solid #3c3c3c;
   border-radius: 3px;
-  padding: 7px 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.bvg-check-label {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  position: relative;
+}
+
+.bvg-native-chk {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+.bvg-custom-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 8px;
+  border-radius: 3px;
+  border: 1.5px solid #a8a8a8;
+  background: #1c1c1c;
+  color: transparent;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.bvg-custom-box.is-checked {
+  background: #4da6ff;
+  border-color: #4da6ff;
+  color: #ffffff;
+}
+
+#btn-bvg-revert {
+  margin-left: auto;
 }
 
 .group-header {
@@ -497,7 +578,7 @@ body {
   color: #aaa;
   text-transform: uppercase;
   letter-spacing: 0.6px;
-  margin-bottom: 1px;
+  margin-bottom: 9px;
 }
 
 .knob-row {
@@ -507,6 +588,18 @@ body {
   font-size: 11px;
   color: #ccc;
   gap: 6px;
+  margin-bottom: 6px;
+}
+
+.knob-row:last-child {
+  margin-bottom: 0;
+}
+
+.knob-subdivider {
+  border-top: 1px solid #3c3c3c;
+  padding-top: 10px;
+  margin-top: 10px;
+  margin-bottom: 6px;
 }
 
 .knob-label {
@@ -558,33 +651,50 @@ body {
 }
 
 sp-slider {
+  display: block;
   width: 100%;
-  margin: 0 0 2px 0;
+  margin: 6px 0 12px 0;
   --spectrum-slider-track-color: #555;
   --spectrum-slider-fill-track-color: #4da6ff;
+}
+
+sp-slider:last-child {
+  margin-bottom: 2px;
 }
 
 .mesh-picker-row {
   display: flex;
   align-items: center;
   gap: 6px;
-}
-
-.mesh-picker-row select,
-.knob-inline-num,
-.knob-full-input,
-.angle-cell input {
-  background: #383838;
-  color: #e0e0e0;
-  border: 1px solid #555;
-  border-radius: 3px;
-  padding: 3px 5px;
-  font-size: 11px;
+  margin-bottom: 10px;
 }
 
 .mesh-picker-row select {
   flex: 1 1 auto;
   min-width: 0;
+  height: 26px;
+  min-height: 26px;
+  background: #383838;
+  color: #e0e0e0;
+  border: 1px solid #555;
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 11px;
+}
+
+.knob-inline-num,
+.knob-full-input,
+.mesh-tpi-num,
+.angle-cell input {
+  height: 26px;
+  min-height: 26px;
+  line-height: 20px;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: #e0e0e0;
+  background: #383838;
+  border: none;
+  border-radius: 3px;
 }
 
 /* Custom (TPI / µm) inline row toggled via direct .visible class */
@@ -597,6 +707,7 @@ sp-slider {
 
 #custom-mesh-row.visible {
   display: flex;
+  margin-bottom: 10px;
 }
 
 .custom-mesh-field {
@@ -612,12 +723,6 @@ sp-slider {
 .mesh-tpi-num {
   width: 68px;
   text-align: right;
-  background: #383838;
-  color: #e0e0e0;
-  border: 1px solid #555;
-  border-radius: 3px;
-  padding: 3px 5px;
-  font-size: 11px;
 }
 
 .knob-inline-num {
@@ -627,14 +732,18 @@ sp-slider {
 
 .knob-full-input {
   width: 100%;
+  display: block;
 }
 
-.mesh-picker-row select:focus,
+.mesh-picker-row select:focus {
+  border-color: #4da6ff;
+  outline: none;
+}
+
 .mesh-tpi-num:focus,
 .knob-inline-num:focus,
 .knob-full-input:focus,
 .angle-cell input:focus {
-  border-color: #4da6ff;
   outline: none;
 }
 
@@ -644,6 +753,7 @@ sp-slider {
   align-items: center;
   gap: 5px;
   flex-wrap: wrap;
+  margin-bottom: 2px;
 }
 
 .filter-chip {
@@ -676,20 +786,20 @@ sp-slider {
 .angles-grid {
   display: flex;
   gap: 5px;
+  margin-bottom: 8px;
 }
 
 .angle-cell {
+  display: block;
   flex: 1 1 0;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
 }
 
 .angle-cell label {
   font-size: 9px;
   font-weight: 700;
   color: #aaa;
+  margin-bottom: 4px;
   display: flex;
   align-items: center;
   gap: 3px;
@@ -705,6 +815,7 @@ sp-slider {
 .angle-cell input {
   width: 100%;
   text-align: right;
+  display: block;
 }
 
 #moire-status-detail {
@@ -715,13 +826,12 @@ sp-slider {
 
 /* ─── Telemetry Card & Alerts (Toggled via direct .visible class for UXP repaint reliability) ─── */
 .telemetry-card {
+  display: block;
   background: #252525;
   border: 1px solid #3a3a3a;
   border-radius: 3px;
-  padding: 7px 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  padding: 10px;
+  margin-bottom: 6px;
 }
 
 .telemetry-row {
@@ -729,7 +839,11 @@ sp-slider {
   justify-content: space-between;
   align-items: baseline;
   font-size: 10px;
-  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.telemetry-row:last-child {
+  margin-bottom: 0;
 }
 
 .telemetry-key {
@@ -744,7 +858,7 @@ sp-slider {
 
 #benday-warnings-box {
   display: none;
-  margin-top: 3px;
+  margin-top: 6px;
   padding: 5px 7px;
   border-radius: 3px;
   font-size: 10px;
@@ -760,7 +874,7 @@ sp-slider {
 
 #benday-error-banner {
   display: none;
-  margin-top: 3px;
+  margin-top: 6px;
   padding: 6px 8px;
   border-radius: 3px;
   font-size: 11px;
@@ -811,4 +925,444 @@ sp-slider {
 
 .knob-help.visible {
   display: block;
+  margin-top: 4px;
+  margin-bottom: 8px;
+}
+
+/* ─── HUD Footer & ★ Credits ★ Crawling Window (v0.2) ─── */
+#hud-footer {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 6px;
+  margin-top: 4px;
+  border-top: 1px solid #3c3c3c;
+  font-size: 10px;
+  color: #888;
+}
+
+.credits-trigger-btn {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.credits-trigger-btn:hover {
+  color: #e0a030;
+}
+
+#credits-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(10, 11, 14, 0.88);
+  z-index: 900;
+  align-items: center;
+  justify-content: center;
+}
+
+#credits-overlay.visible {
+  display: flex;
+}
+
+#credits-window {
+  background: #1e1e1e;
+  border: 1px solid #444;
+  border-radius: 8px;
+  color: #e0e0e0;
+  width: 580px;
+  max-width: 94vw;
+  height: 680px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+#credits-viewport {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: scroll;
+  position: relative;
+  padding: 28px 36px;
+}
+
+#credits-crawl {
+  text-align: center;
+  padding: 24px 0;
+}
+
+.credits-scene {
+  margin-bottom: 44px;
+}
+
+.credits-scene:last-child {
+  margin-bottom: 12px;
+}
+
+.credits-stars {
+  color: #e0a030;
+  font-size: 16px;
+  letter-spacing: 5px;
+  margin-bottom: 12px;
+}
+
+.credits-tag {
+  font-size: 13px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #999;
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+
+.credits-hero-title {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: #ffffff;
+  margin: 8px 0 10px 0;
+  text-transform: uppercase;
+}
+
+.credits-hero-subtitle {
+  font-size: 15px;
+  color: #e0a030;
+  font-style: italic;
+  margin-bottom: 14px;
+  line-height: 1.5;
+}
+
+.credits-emblem-interactive {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+  text-align: center;
+  user-select: none;
+  padding: 0 0 8px 0;
+  cursor: default;
+}
+
+.credits-mascot-img {
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto 16px auto;
+  display: block;
+  border-radius: 4px;
+  cursor: default;
+  -webkit-user-drag: none;
+}
+
+.credits-print-interactive {
+  display: block;
+  width: 100%;
+  text-align: center;
+  margin: 18px auto 14px auto;
+  user-select: none;
+  cursor: default;
+}
+
+.benday-patent-medallion {
+  width: 280px;
+  max-width: 88%;
+  margin: 0 auto 10px auto;
+  padding: 14px 16px;
+  border-radius: 6px;
+  border: 2px solid #bb5a29;
+  background: #161718;
+  text-align: center;
+}
+
+.patent-medallion-dots {
+  width: 72px;
+  height: 8px;
+  margin: 0 auto 8px auto;
+  border-top: 2px dotted #e0a030;
+  border-bottom: 2px dotted #e0a030;
+}
+
+.patent-medallion-title {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: #eedec0;
+  margin-bottom: 4px;
+}
+
+.patent-medallion-sub {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  color: #e0a030;
+}
+
+.credits-print-caption {
+  font-size: 12px;
+  color: #bbb;
+  letter-spacing: 1.3px;
+  text-transform: uppercase;
+  text-align: center;
+  display: block;
+  width: 100%;
+}
+
+.credits-quote {
+  font-size: 15px;
+  font-style: italic;
+  color: #dcdcdc;
+  max-width: 480px;
+  margin: 16px auto;
+  line-height: 1.65;
+  text-align: center;
+  padding: 6px 16px;
+}
+
+.credits-quote-divider {
+  width: 70px;
+  height: 1px;
+  background: #e0a030;
+  margin: 16px auto;
+  opacity: 0.6;
+}
+
+.credits-role-title {
+  font-size: 13.5px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: #e0a030;
+  text-transform: uppercase;
+  margin-top: 20px;
+  margin-bottom: 6px;
+}
+
+.credits-role-name {
+  font-size: 18px;
+  font-weight: 800;
+  color: #fff;
+  margin-bottom: 6px;
+}
+
+.credits-role-desc {
+  font-size: 14px;
+  color: #ccc;
+  max-width: 460px;
+  margin: 0 auto 14px auto;
+  line-height: 1.5;
+}
+
+.credits-legend-card {
+  background: #252525;
+  border: 1px solid #383838;
+  border-radius: 6px;
+  padding: 11px 15px;
+  margin: 11px auto;
+  max-width: 480px;
+  display: flex;
+  align-items: center;
+  text-align: left;
+}
+
+.credits-legend-card:hover {
+  background: #2e2e2e;
+  border-color: #555;
+}
+
+.credits-badge {
+  width: 42px;
+  height: 42px;
+  margin-right: 14px;
+  border-radius: 5px;
+  background: #333;
+  border: 1px solid #4da6ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: #4da6ff;
+  flex-shrink: 0;
+}
+
+.credits-legend-name {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.credits-legend-year {
+  font-size: 13px;
+  color: #e0a030;
+  margin-left: 6px;
+}
+
+.credits-legend-role {
+  font-size: 13px;
+  color: #bbb;
+  font-style: italic;
+  margin-top: 2px;
+}
+
+.credits-legend-file {
+  font-size: 12px;
+  color: #888;
+  font-family: monospace;
+  margin-top: 3px;
+}
+
+/* ─── 1879 Ben Day Rapid Shading Medium Broadside Easter Egg ─── */
+#manifesto-broadside {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #161718;
+  color: #eedec0;
+  border: 2px solid #bb5a29;
+  border-radius: 8px;
+  z-index: 50;
+  flex-direction: column;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+#manifesto-broadside.visible {
+  display: flex;
+}
+
+.manifesto-header {
+  background: #1b1c1e;
+  border-bottom: 2px solid #bb5a29;
+  padding: 16px 22px 12px 22px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.manifesto-title {
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 2.5px;
+  color: #eedec0;
+  text-transform: uppercase;
+  margin: 0 0 6px 0;
+}
+
+.manifesto-subtitle {
+  font-size: 13px;
+  letter-spacing: 1.6px;
+  color: #bb5a29;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.manifesto-body {
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px 32px 34px 32px;
+  font-size: 14.5px;
+  line-height: 1.75;
+  color: #eedec0;
+}
+
+.manifesto-body p {
+  width: 100%;
+  margin: 0 0 18px 0;
+  line-height: 1.75;
+  display: block;
+  text-align: left;
+}
+
+.manifesto-quote {
+  width: 100%;
+  border-left: 3px solid #bb5a29;
+  padding: 12px 18px;
+  margin: 16px 0;
+  font-style: italic;
+  color: #ffffff;
+  font-size: 15px;
+  line-height: 1.65;
+  background: rgba(187, 90, 41, 0.08);
+  border-radius: 0 4px 4px 0;
+}
+
+/* ─── Confirm Overlay (Save Config Overwrite Guard — Matches Reveal) ─── */
+#confirm-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(16, 16, 18, 0.85);
+  z-index: 950;
+  align-items: center;
+  justify-content: center;
+}
+
+#confirm-overlay.visible {
+  display: flex;
+}
+
+#confirm-box {
+  background: #3a3a3a;
+  border: 1px solid #555;
+  border-radius: 6px;
+  color: #e0e0e0;
+  padding: 24px;
+  max-width: 340px;
+  width: 90%;
+}
+
+#confirm-box h3 {
+  font-size: 15px;
+  font-weight: bold;
+  margin: 0 0 10px 0;
+  color: #e0a030;
+}
+
+#confirm-box p {
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0 0 14px 0;
+  color: #ccc;
+}
+
+#confirm-box .confirm-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+#confirm-box button {
+  background: #505050;
+  border: 1px solid #666;
+  color: #e0e0e0;
+  padding: 5px 16px;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+#confirm-box button:hover {
+  background: #606060;
+}
+
+#btn-confirm-ok {
+  border-color: #e0a030;
 }

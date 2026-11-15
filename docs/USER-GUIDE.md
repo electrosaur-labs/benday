@@ -19,18 +19,18 @@ Benday enhances Photoshop by computing your halftone screens directly from your 
 ## Requirements & Installation
 
 - **Adobe Photoshop 23.3.0** (Photoshop 2022) or later on macOS or Windows
-- A CMYK document (`8-bit` or `16-bit` per channel) at print resolution (`300–1200 DPI` recommended)
+- A **single-layer** flattened CMYK document (`8-bit` or `16-bit` per channel) at print resolution (`300–1200 DPI` recommended)
 
 ### Installing the Plugin
 
-1. Double-click `benday-v0.1.0.ccx` to install via the Creative Cloud Desktop app (or load `packages/benday-ps/dist/manifest.json` in the **Adobe UXP Developer Tool**).
-2. In Photoshop, open your CMYK artwork and choose **Plugins → Electrosaur: Benday → Benday...**.
+1. Double-click `benday-v0.2.0.ccx` to install via the Creative Cloud Desktop app (or load `packages/benday-ps/dist/manifest.json` in the **Adobe UXP Developer Tool**).
+2. In Photoshop, flatten your continuous-tone CMYK artwork (**Layer → Flatten Image**) and choose **Plugins → Electrosaur: Benday → Benday...**.
 
 ---
 
 ## Step 1: CMYK Profile Conversion Workflow
 
-Benday operates strictly on **CMYK** documents. If you run **Plugins → Electrosaur: Benday → Benday...** with no document open or with an RGB, Lab, or Grayscale document active, Benday displays an alert and exits before opening the dialog.
+Benday operates strictly on **single-layer CMYK** documents. If you run **Plugins → Electrosaur: Benday → Benday...** with no document open, a non-CMYK document, a multi-layer document (`Flatten First`), or a document that has already been halftoned by Benday (`Already Halftoned` — either containing a `Benday Halftone` layer or flattened after Benday commit), Benday displays an alert and exits before opening the dialog.
 
 Convert your artwork to CMYK deliberately **before** running Benday:
 
@@ -42,7 +42,7 @@ Convert your artwork to CMYK deliberately **before** running Benday:
    - **`600 DPI` – `1200 DPI`**: Recommended for `230–420 TPI` process work so halftone dots and angles step smoothly without coarse pixel quantization.
    - Documents below `72 DPI` (or too coarse to resolve the minimum printable dot for your chosen mesh) are rejected with `ERR_DPI_TOO_LOW`.
 
-Why profile conversion and tone curves stay in Photoshop: Photoshop's color engine handles ink separation, gray component replacement (GCR/UCR), and non-destructive **Curves** / dot-gain adjustment layers across your entire `.psd` stack. Benday deliberately omits built-in tone curves inside its modal dialog so your color and dot-gain edits remain live, inspectable Photoshop layers beneath your `Benday Halftone` layer while Benday focuses strictly on calibrated halftone linearity and physical screen-mesh constraints.
+Why profile conversion and multi-point tone curves stay in Photoshop: Photoshop's color engine handles ink separation, gray component replacement (GCR/UCR), and non-destructive **Curves** adjustment layers across your entire `.psd` stack. Rather than duplicating multi-point curve editors inside its modal dialog, Benday provides a single physical **Extra Press Dot Gain (`0%–20%`)** midtone pullback right before screen generation — so you can compensate for the extra mechanical dot gain of `45–65 LPI` screen printing without making your continuous-tone `Original` artwork look washed out on screen.
 
 ---
 
@@ -134,7 +134,18 @@ Why this layout matters on press:
 2. **Zero `0°` Yellow clash:** Unlike offset press defaults that place Yellow at `0°` right on top of the mesh warp threads, every screen in Benday sits at least **`15.0°`** away from both warp and weft threads.
 3. **`±2.0°` stretcher slop immunity:** In real screen rooms, pneumatic and mechanical stretchers vary by `±1°` to `±2°` as frames tension and relax. Because `15.0°` nominal clearance leaves a wide safety margin, every screen maintains **`>= 13.0°`** thread clearance even if a frame lands `±2.0°` off your target bias angle.
 
-If you manually edit individual **Cyan**, **Magenta**, **Yellow**, or **Black** angle boxes, Benday re-runs the moiré analyzer immediately. Click **Auto from Mesh°** at any time to restore the bias-centered rosette.
+If you manually edit individual **Cyan**, **Magenta**, **Yellow**, or **Black** angle boxes, Benday switches **Rosette Preset** to **`Manual…`** and re-runs the moiré analyzer immediately.
+
+### Rosette Angle Presets (`Auto`, `Image-Aware`, `FTA +7.5°`, `ISO Litho`, `Flamenco`)
+
+Use the **Rosette Preset** dropdown in **CMYK Rosette (°)** to switch screen-angle constellations in one click:
+
+- **`Auto (Mesh ±15°)` *(Default)*:** Tracks `Mesh Bias (°)` (`C = θ+15°`, `M = θ+75°`, `Y = θ+60°`, `K = θ+45°`), keeping `15.0°` nominal thread clearance and `30.0°` strong-ink spacing.
+- **`Image-Aware Auto`:** Analyzes your artwork's midtone ink weights and 2-ink overlaps in `< 2 ms` and permutes `{C, M, Y, K}` across `{θ+15°, θ+45°, θ+60°, θ+75°}` — placing the highest-contrast midtone ink into the least-visible `45°` oblique-effect slot (ideal for light-`K` portraits or sky-dominant posters) while keeping heavy 2-ink overlaps `>= 30°` apart.
+- **`FTA Flexo / Screen (+7.5°)`:** Industry `+7.5°`-shifted set (`C: 82.5°`, `M: 22.5°`, `Y: 7.5°`, `K: 52.5°`).
+- **`ISO 12647 Litho`:** Conventional offset proofing reference (`15° / 75° / 0° / 45°`, useful when bias-stretching frames at `7.5°–22.5°`).
+- **`Flamenco (45° Dot-on-Dot)`:** Places all four screens at `θ + 45°` to eliminate rosette texture on coarse garment meshes.
+- **`Manual…`:** Selected automatically whenever you type custom `C / M / Y / K` angles.
 
 ---
 
@@ -151,6 +162,29 @@ Outside that AM range — in delicate highlights (`0% < tone < tMin`) and deep s
 | **Clamp** | Places one full-size $B_{D_{\min}}$ minimum dot in every non-zero highlight cell. | Holds one full-size $B_{D_{\min}}$ open hole in every non-solid (`< 255`) shadow cell. | Press calibration wedges, holding faint tint blocks uniformly, or preventing shadow fill-in before `100%` solid. |
 
 In **all three modes**, no non-solid dot or enclosed halftone hole is ever smaller than your physical $B_{D_{\min}}$ disk.
+
+---
+
+## Step 6: Extra Press Dot Gain (`0%–20%`) & Crisp Type (`BVG`)
+
+### Press Dot Gain Pullback (`0%–20%`, Default `0%`)
+
+Standard coated CMYK profiles (`SWOP`, `GRACoL`) already compensate for `~18%–20%` offset litho dot gain, but `45–65 LPI` screen printing through polyester mesh typically adds another **`+8% to +15%`** mechanical/optical midtone gain on press.
+
+In **Press Conditioning**, set **Press Dot Gain (%)** (`0%` to `20%`) to apply a smooth parabolic midtone pullback right before screen generation:
+
+$$t_{\text{film}} = t - 4 \Delta G \, t(1 - t)$$
+
+- **`0%` paper (`t = 0`) and `100%` solid ink (`t = 1`) never change** — pure white stays clear and `100%` solid linework stays solid.
+- At **`10%` Dot Gain**, a `50%` midtone pulls back to `40%` film dot area while your **`ORIGINAL`** continuous-tone view remains true and un-washed-out on screen.
+
+### Crisp Type & Linework (`BVG`, Default `Off`)
+
+Flattened artwork converted from RGB via `Edit → Convert to Profile...` often contains `1–2 px` gray anti-aliased rims on typography plus **ICC Rich-Black small text** (`C≈75%, M≈68%, Y≈67%, K≈90%`) that fringes if press registration shifts by `0.25 mm`.
+
+Enabling **Crisp Type & Linework (BVG)** runs a 2-stage Bimodal Variance-Gated pre-conditioner:
+1. **Narrow Rich-Black Type UCR:** Promotes narrow neutral Rich-Black strokes (`width < 2 × cellPitchPx`) to **solo `100% K` (`K = 255`, `C = M = Y = 0`)** so small body text prints razor-sharp on the Black screen alone, while wide Rich-Black background fills keep their full `CMYK` underbedding untouched.
+2. **Bimodal Otsu Edge Snapping (`5 × 5`, $\eta \ge 0.82$):** Snaps genuine anti-aliased vector/type edges cleanly while protecting `1 px` hairlines and `1 px` letter counters (`e`, `a`, `o`) and modifying **`0` pixels** on photographic ramps, skin tones, and film grain.
 
 ---
 
@@ -173,20 +207,24 @@ The left workspace of the resizable `1100 × 850` dialog previews your full docu
   - **`Fit`:** Anti-aliased full-canvas tonal overview (free of artificial sub-pixel binary Nyquist moiré).
   - **`50% / 100% / 200%`:** True binary `{0, 255}` halftone dots rendered via `16 px`-halo viewport virtualization locked to your global document screen lattice — scrolling or panning never causes dots to swim relative to your artwork.
 - **Scroll & Click-Drag Pan:** When zoomed in (`50%`, `100%`, `200%`), use scrollbars/trackpad or click-and-drag directly on the canvas to inspect highlights, skin tones, fine type, and deep shadows anywhere on the sheet.
-- **Zero-Lag Click-to-Compare (`ORIGINAL`):** Click (without dragging) anywhere on the preview canvas to toggle instantaneously (`< 2 ms`) between **`ORIGINAL`** continuous-tone artwork and the **`Halftone`** preview.
-- **Bottom Screen Strip (`Composite | C | M | Y | K`):** Click **C**, **M**, **Y**, or **K** in the bottom swatch strip to solo any individual screen as a crisp black-on-white film positive (`100%` dot = black, `0%` clear film = white) along with its live screen angle; click **Composite** (or click the active screen swatch again, or press **`Esc`**) to return to the 4-color proof. Pressing **`Esc`** in **Composite** view cancels and closes the dialog without modifying your document.
+- **Click-to-Toggle & Hold-to-Blink (`ORIGINAL`):**
+  - **Quick click (`< 300 ms`):** Toggles instantaneously (`< 2 ms`) between **`ORIGINAL`** continuous-tone artwork and the **`Halftone`** preview (on either the canvas or the **`Original`** button).
+  - **Press and hold (`>= 300 ms`):** Automatically blinks back and forth between **`ORIGINAL`** and **`Halftone`** every **`400 ms`** so your eye immediately spots subtle tonal shifts, dot-gain pullback, or text edge changes; releasing restores your prior view cleanly.
+- **Perceptual `HVS ΔE` & `Gray Steps/Cell` Telemetry:** Both the preview header (`HVS ΔE 1.8 · p95 3.4 · 170 steps`) and the **Physics Telemetry** card report viewing-distance perceptual color fidelity evaluated in **16-bit CIELAB** after human-visual-system optical blurring ($\sigma = 1.5 \times \text{cellPitchPx}$), alongside discrete tonal steps per halftone cell.
+- **Save / Load Press Config (`Save Config` / `Load Config`):** Use **Save Config** and **Load Config** in the top action stack of the right panel to share named `<FILENAME>-benday.json` shop presets across jobs (or pass `--config` to the CLI). Opening Benday on a new document or clicking **Reread Document** resets parameters cleanly to defaults so stale settings never carry over unexpectedly.
+- **Bottom Screen Strip (`Composite | C | M | Y | K`) & `★ Credits ★`:** Click **C**, **M**, **Y**, or **K** in the bottom swatch strip to solo any individual screen as a crisp black-on-white film positive along with its live screen angle; click **Composite** (or press **`Esc`**) to return to the 4-color proof. Click **`★ Credits ★`** in the bottom-right footer to view the crawling dedication to **Benjamin Henry Day Jr. (1879)** and click the 1879 patent medallion to open the historical Rapid Shading Medium broadside.
 
 ### Non-Destructive Layer Output & Re-Run Guard
 
-Clicking **Apply Halftone** never flattens or overwrites your original layers:
+Clicking **Apply Halftone** never overwrites your original continuous-tone layer:
 
 1. Benday creates a single new CMYK pixel layer at the very top of your layer stack named with your exact press spec, for example:
    `Benday Halftone (230 TPI · 46.0 LPI · N=5)`
 2. Each channel (**Cyan**, **Magenta**, **Yellow**, **Black**) of that layer contains pure discrete `{0%, 100%}` halftone pixels (`8-bit` or `16-bit` matching your document).
-3. Your underlying original layer(s) are automatically marked **not visible** (hidden, never deleted) so only the newly generated halftone layer is visible cleanly on canvas.
-4. The entire commit (creating/replacing the halftone layer and hiding the source layer(s)) is wrapped in a single Photoshop history state (**Edit → Undo Benday Halftone**).
+3. Your underlying continuous-tone layer is automatically marked **not visible** (hidden, never deleted) so only the newly generated halftone layer is visible cleanly on canvas.
+4. The entire commit (creating the halftone layer and hiding the source layer) is wrapped in a single Photoshop history state (**Edit → Undo Benday Halftone**).
 
-**Re-running with different settings:** You do not need to delete the previous `Benday Halftone (...)` layer or manually unhide your source artwork before running Benday again (or clicking **Reread Document**). Benday's **Re-Run Guard** automatically hides any existing `Benday Halftone*` layers on its temporary read duplicate, re-enables your underlying continuous-tone source layer(s) on that duplicate if they were hidden by an earlier run, and replaces the previous `Benday Halftone*` layer cleanly when you click **Apply Halftone**.
+**Re-running with different settings:** Because Benday prevents accidentally re-halftoning an already-halftoned document (`Already Halftoned` guard), simply press **Cmd/Ctrl + Z** (**Edit → Undo Benday Halftone**) — or delete the `Benday Halftone (...)` layer and make your continuous-tone layer visible — before running Benday again.
 
 ---
 

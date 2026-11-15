@@ -1,9 +1,12 @@
 'use strict';
 
 const UM_PER_INCH = 25400;
+const DEFAULT_MESH_TPI = 355;
+const DEFAULT_THREAD_UM = 31;
 
 /**
- * Standard monofilament plain-weave polyester roll catalog: meshTpi -> threadDiaUm
+ * Standard monofilament plain-weave polyester roll catalog: meshTpi -> threadDiaUm.
+ * Note: 355 defaults to 31 µm matching studio default 355-31 (32% open · Hi-R).
  */
 const STANDARD_THREAD_UM = Object.freeze({
   110: 80,
@@ -13,7 +16,7 @@ const STANDARD_THREAD_UM = Object.freeze({
   230: 48,
   280: 40,
   305: 34,
-  355: 34,
+  355: 31,
   380: 31,
   420: 27,
 });
@@ -405,6 +408,8 @@ function computeMeshSpec(params = {}) {
 
 module.exports = {
   UM_PER_INCH,
+  DEFAULT_MESH_TPI,
+  DEFAULT_THREAD_UM,
   STANDARD_THREAD_UM,
   STANDARD_MESH_TPI,
   SAATI_MESH_PRESETS,

@@ -630,4 +630,65 @@ describe('PhotoshopCmykBridge Mock UXP Suite', () => {
     expect(reread.channels.K[0]).toBe(255);
     expect(env.origDoc.layers[1].visible).toBe(false);
   });
+
+  it('enforces single-layer mandate (ERR_MULTI_LAYER), Already-Halftoned layer guard (ERR_ALREADY_HALFTONED), and flattened Benday XMP/binary guard', async () => {
+    // 1. Document already containing a Benday Halftone* layer -> ERR_ALREADY_HALFTONED
+    const alreadyHalftonedEnv = createMockPhotoshopEnv({
+      width: 32,
+      height: 32,
+      priorHalftoneLayer: true,
+    });
+    const resPrior = PhotoshopCmykBridge.validateDocument(alreadyHalftonedEnv.app);
+    expect(resPrior.ok).toBe(false);
+    expect(resPrior.code).toBe('ERR_ALREADY_HALFTONED');
+    expect(resPrior.title).toBe('Already Halftoned');
+
+    // 2. Multi-layer CMYK document without Benday layer -> ERR_MULTI_LAYER ("Flatten First")
+    const multiLayerEnv = createMockPhotoshopEnv({ width: 32, height: 32 });
+    multiLayerEnv.origDoc.layers.push({ id: 999, name: 'Background Copy', visible: true });
+    const resMulti = PhotoshopCmykBridge.validateDocument(multiLayerEnv.app);
+    expect(resMulti.ok).toBe(false);
+    expect(resMulti.code).toBe('ERR_MULTI_LAYER');
+    expect(resMulti.title).toBe('Flatten First');
+    expect(resMulti.message).toContain('Current layers: 2');
+    expect(resMulti.message).toContain('Layer → Flatten Image');
+
+    // 3. Flattened Benday document detection (`queryDocumentXmp` + `isFlattenedBendayDocument`)
+    const flatEnv = createMockPhotoshopEnv({ width: 32, height: 32, resolution: 600 });
+    await PhotoshopCmykBridge.commitHalftoneLayer(
+      flatEnv.app,
+      flatEnv.core,
+      flatEnv.action,
+      flatEnv.imaging,
+      { meshTpi: 230, ruleOfN: 5.0 }
+    );
+    const rawXmp = await PhotoshopCmykBridge.queryDocumentXmp(flatEnv.action);
+    expect(rawXmp).toContain('<!-- BENDAY:BEGIN -->');
+
+    const binaryChannels = {
+      C: new Uint8Array(1024).fill(0),
+      M: new Uint8Array(1024).map((_, i) => (i % 3 === 0 ? 255 : 0)),
+      Y: new Uint8Array(1024).fill(0),
+      K: new Uint8Array(1024).map((_, i) => (i % 2 === 0 ? 255 : 0)),
+    };
+    const contToneChannels = {
+      C: new Uint8Array(1024).fill(128),
+      M: new Uint8Array(1024).fill(90),
+      Y: new Uint8Array(1024).fill(45),
+      K: new Uint8Array(1024).fill(20),
+    };
+    const blankWhiteChannels = {
+      C: new Uint8Array(1024).fill(0),
+      M: new Uint8Array(1024).fill(0),
+      Y: new Uint8Array(1024).fill(0),
+      K: new Uint8Array(1024).fill(0),
+    };
+
+    expect(PhotoshopCmykBridge.isFlattenedBendayDocument(rawXmp, binaryChannels)).toBe(true);
+    expect(PhotoshopCmykBridge.isFlattenedBendayDocument(rawXmp, contToneChannels)).toBe(false);
+    expect(PhotoshopCmykBridge.isFlattenedBendayDocument(rawXmp, blankWhiteChannels)).toBe(false);
+    expect(PhotoshopCmykBridge.isFlattenedBendayDocument('<x:xmpmeta/>', binaryChannels)).toBe(
+      false
+    );
+  });
 });

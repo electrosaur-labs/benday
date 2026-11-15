@@ -11,13 +11,13 @@ Because both tools share the same press room — the same SAATI polyester rolls,
 
 ## 1. Suite-Wide Vocabulary & Mesh Physics Unification (Critical Priority)
 
-Comparing `Reveal`'s `packages/reveal-core/lib/utils/MeshPhysics.js` (`42` lines) against `Benday`'s `packages/benday-core/lib/MeshPhysics.js` exposes a subtle **vocabulary and physics mismatch** that will confuse shops running both plugins unless unified:
+Comparing `Reveal`'s `packages/reveal-core/lib/utils/MeshPhysics.js` against `Benday`'s `packages/benday-core/lib/MeshPhysics.js` highlighted a **vocabulary and physics mismatch** across the suite (resolved in `reveal-core` / `reveal-navigator` / `reveal-cli` on `2026-11-15`; deferred port to `pyreveal` / `libreveal` / `krita-reveal` tracked in `reveal/TODO.md`):
 
-| Concept | Current `Reveal` (`v1.0`) | Current `Benday` (`v0.1`) | Unified Electrosaur Target |
+| Concept | Legacy `Reveal` (`v1.0` pre-unification) | `Benday` (`v0.2`) & Updated `Reveal` JS (`2026-11-15`) | Remaining Cross-Port Target |
 |---|---|---|---|
-| **Mesh Selection** | Bare `TPI` (`default: 355`), ignores thread diameter & open area (`355-40`, `355-34`, and `355-31 Hi-R` treated identically) | Paired 20-roll **`SAATI_MESH_PRESETS`** (`110-80` through `420-27`, standard + `Hi-R` thin-thread) + custom `(TPI / µm)` | Shared **`SAATI_MESH_PRESETS`** (`TPI - µm` + open-area `%`) across both `Reveal` and `Benday` |
-| **Open-Area Scaling** | None (`1.0×` implicit) | $\sqrt{f_{\text{ref}} / f_{\text{open}}}$ anchored to `230-48` (`32.0%` open area) + open-area-scaled knuckle span $(p_m + d_t)\sqrt{f_{\text{ref}} / f_{\text{open}}}$ | Back-port open-area & knuckle-floor compensation into `reveal-core`, `pyreveal`, and `libreveal` |
-| **Meaning of `Rule of N`** | *Minimum dot diameter* in mesh pitches: `minDotPx = ceil(N * dpi / tpi)` (`default: 7.0`, range `4–10`) | Press-room *mesh threads per halftone cell*: `LPI = TPI / (N * openAreaScale)` (`default: 5.0`, range `2–10`), with `dMin` derived from knuckle span + `12%` reference cell dot | Clarify UI labels explicitly: **Cell Ratio (`N` threads/cell)** for periodic halftones vs. **Stencil Floor (`D_min` in µm / px / openings)** for aperiodic spot-color islands |
+| **Mesh Selection** | Bare `TPI` (`default: 355`), ignored thread diameter & open area (`355-40`, `355-34`, and `355-31 Hi-R` treated identically) | Paired 20-roll **`SAATI_MESH_PRESETS`** (`110-80` through `420-27`, standard + `Hi-R` thin-thread) + custom `(TPI / µm)` + `No Mesh (1 px pure)` in `Reveal` | Port **`SAATI_MESH_PRESETS`** (`TPI - µm` + open-area `%`) to `pyreveal`, `libreveal`, and `krita-reveal` |
+| **Open-Area Scaling** | None (`1.0×` implicit) | $\sqrt{f_{\text{ref}} / f_{\text{open}}}$ anchored to `230-48` (`32.0%` open area) + open-area-scaled knuckle span $(p_m + d_t)\sqrt{f_{\text{ref}} / f_{\text{open}}}$ | Port open-area & knuckle-floor compensation into `pyreveal` and `libreveal` |
+| **Meaning of `Rule of N`** | *Minimum dot diameter* in mesh pitches (`default: 7.0`, range `4–10`) | `Benday`: *mesh threads per halftone cell* (`LPI = TPI / (N * openAreaScale)`, `default: 5.0`); `Reveal`: *minimum spot-island stencil floor* (`default: 7.0`) with self-supporting line-spine preservation | Port configurable `ruleOfN` and self-supporting line-spine `_pruneUnsupportedFilaments` to `pyreveal` and `libreveal` |
 
 ---
 
@@ -31,7 +31,7 @@ Comparing `Reveal`'s `packages/reveal-core/lib/utils/MeshPhysics.js` (`42` lines
 ### Planned `Reveal → Benday` Transfers (`v0.2`)
 1. **Hold-to-Blink Comparator (`> 300 ms` Hold → `400 ms` Auto-Blink):**
    - In `Reveal` (`Preview.js`), a quick click toggles `ORIGINAL`, while holding pointerdown `> 300 ms` enters an automatic `400 ms` blink loop (`Original ↔ Separated`) that makes subtle highlight drop-out or shadow plugging jump out instantly without moving the cursor. Port directly into `BendayDialog.js`.
-2. **Save / Load Press Config (`.benday.json`) & Embedded `.psd` Metadata Manifest:**
+2. **Save / Load Press Config (`-benday.json`) & Embedded `.psd` Metadata Manifest:**
    - Port `Reveal`'s **Save Config / Load Config** workflow so shops can store named press recipes (`230-48 Poster`, `355-31 Hi-R Coated`, `156-64 Garment`) and embed a lightweight JSON manifest on the `Benday Halftone` layer (mirroring `Reveal`'s `Manifest v2.1`) so re-opening a `.psd` restores exact mesh, `Rule of N`, bias angle, manual rosette overrides, and tail mode.
 3. **Bimodal Variance-Gated (`BVG`) Edge Snapping (`BvgEdgeSnapper.js`):**
    - Adapt `Reveal`'s Dual-Scale Bimodal Variance Gating (`SeparationEngine.js` / `DitheringStrategies.js`) as a pre-halftone conditioning pass that snaps anti-aliased graphic/type rims cleanly to `{0, 255}` and promotes narrow ICC Rich-Black text strokes to solo `100% K` while leaving continuous-tone photo grain completely untouched.
@@ -47,7 +47,8 @@ Comparing `Reveal`'s `packages/reveal-core/lib/utils/MeshPhysics.js` (`42` lines
 ## 3. Loop B: `Benday → Reveal` (Bringing `Benday`'s Advances Back into `Reveal`)
 
 1. **Upgrading `Reveal`'s Mesh Physics (`SAATI_MESH_PRESETS` + Thread Diameter + Open Area):**
-   - Replace `Reveal`'s TPI-only `minDotPx` helper with `Benday`'s physical plain-weave aperture model (`threadDiaUm`, `openArea`, `openAreaScale`, knuckle floor, and `SAATI_MESH_PRESETS`) across `reveal-core`, `pyreveal`, `libreveal`, and `krita-reveal` (preserving `ΔE76 < 3.0` cross-language parity).
+   - **Done in `reveal-core`, `reveal-navigator`, and `reveal-cli` (`2026-11-15`):** Replaced TPI-only `minDotPx` with `Benday`'s physical plain-weave aperture model (`threadDiaUm`, `openArea`, `openAreaScale`, knuckle floor, and `SAATI_MESH_PRESETS` with `355-31 Hi-R` default + `Custom (TPI / µm)`), restored strict `Preview = Production` parity on live mesh/`Rule of N` changes, and fixed self-supporting line-spine preservation in `_pruneUnsupportedFilaments`.
+   - **Deferred Cross-Language Ports (`reveal/TODO.md`):** Port SAATI `(tpi, tdia)` `MeshPhysics`, configurable `ruleOfN`, and self-supporting line-spine `_pruneUnsupportedFilaments` to `pyreveal`, `libreveal`, and `krita-reveal` (preserving `ΔE76 < 3.0` cross-language parity).
 2. **Replacing `0°` `8×8` Bayer Dithering with Moiré-Safe Angled Halftone Screens:**
    - `Reveal`'s current ordered dithering (`DitheringStrategies.js`) uses an axis-aligned `8×8` `BAYER_MATRIX` (`0°` — directly parallel to square-stretched warp and weft mesh threads!).
    - Integrating `@electrosaur-labs/benday-core` (`halftoneChannel` + `RosetteAngles` / `autoOptimizeAngle`) gives `Reveal` true **angled, moiré-safe Euclidean and Hybrid AM/FM screens** for two-color spot blends, tonal spot-color gradations, and choked white underbase screens on dark garments (`v0.3`).

@@ -60,6 +60,281 @@ function computeRosetteAngles(meshAngleDeg = 0) {
   };
 }
 
+const ROSETTE_PRESETS = Object.freeze([
+  Object.freeze({
+    id: 'auto',
+    label: 'Auto (Mesh-Safe Rosette)',
+    description: 'Centers mesh angle inside the empty 30° rosette pocket (θ + 15°/75°/60°/45°).',
+  }),
+  Object.freeze({
+    id: 'image-aware',
+    label: 'Image-Aware (HVS Optimal)',
+    description: 'Assigns dominant midtone inks to 45° oblique minimum and minimizes 15° co-occurrence.',
+  }),
+  Object.freeze({
+    id: 'fta',
+    label: 'FTA Flexo (+7.5°)',
+    description: 'FTA flexographic / textile +7.5° offset (θ + 7.5°/67.5°/82.5°/37.5°).',
+  }),
+  Object.freeze({
+    id: 'iso',
+    label: 'Conventional Offset (ISO)',
+    description: 'Traditional ISO 12647-2 offset press angles (C 15°, M 75°, Y 0°, K 45°).',
+  }),
+  Object.freeze({
+    id: 'flamenco',
+    label: 'Flamenco (Single-Angle)',
+    description: 'Single-angle dot-on-dot separation at θ + 22.5° across all four screens.',
+  }),
+  Object.freeze({
+    id: 'manual',
+    label: 'Manual',
+    description: 'Custom per-screen C / M / Y / K angles.',
+  }),
+]);
+
+const ROSETTE_PRESET_IDS = Object.freeze(ROSETTE_PRESETS.map((p) => p.id));
+
+// Precomputed 24 permutations of [0, 1, 2, 3] for C, M, Y, K -> 4 pocket slots
+const PERMS_4 = (() => {
+  const out = [];
+  const used = [false, false, false, false];
+  const cur = [0, 0, 0, 0];
+  function bt(depth) {
+    if (depth === 4) {
+      out.push(cur.slice());
+      return;
+    }
+    for (let i = 0; i < 4; i++) {
+      if (!used[i]) {
+        used[i] = true;
+        cur[depth] = i;
+        bt(depth + 1);
+        used[i] = false;
+      }
+    }
+  }
+  bt(0);
+  return Object.freeze(out);
+})();
+
+// Luminance-weighted HVS visibility priors for [C, M, Y, K]
+const HVS_CHANNEL_WEIGHTS = Object.freeze([0.62, 0.72, 0.12, 1.0]);
+
+/**
+ * Image-Aware Rosette Slot Assignment (< 2 ms via <= 4096-sample deterministic stride).
+ *
+ * Evaluates midtone dot visibility m_c = 4 * t_c * (1 - t_c) weighted by HVS contrast
+ * sensitivity w = { C: 0.62, M: 0.72, Y: 0.12, K: 1.00 } and 2-ink spatial co-occurrence,
+ * then searches all 24 permutations of the mesh-safe rosette pocket {θ+15°, θ+45°, θ+60°, θ+75°}
+ * to minimize Campbell-Kulikowski oblique-effect visibility cos^2(2*s) plus 15°-bisector
+ * inter-screen co-occurrence.
+ *
+ * @param {{ C: Uint8Array, M: Uint8Array, Y: Uint8Array, K: Uint8Array }|null} channels
+ * @param {number} width
+ * @param {number} height
+ * @param {number} [meshAngleDeg=0]
+ * @returns {{ C: number, M: number, Y: number, K: number }}
+ */
+function assignImageAwareRosetteSlots(channels, width, height, meshAngleDeg = 0) {
+  const theta = Number.isFinite(meshAngleDeg) ? meshAngleDeg : 0;
+  if (
+    !channels ||
+    !channels.C ||
+    !channels.M ||
+    !channels.Y ||
+    !channels.K ||
+    !(width > 0) ||
+    !(height > 0)
+  ) {
+    return computeRosetteAngles(theta);
+  }
+
+  const chArr = [channels.C, channels.M, channels.Y, channels.K];
+  const N = width * height;
+  if (chArr[0].length < N || chArr[1].length < N || chArr[2].length < N || chArr[3].length < N) {
+    return computeRosetteAngles(theta);
+  }
+
+  // Deterministic <= 64 x 64 (= 4096) stride pass
+  const stepX = Math.max(1, Math.ceil(width / 64));
+  const stepY = Math.max(1, Math.ceil(height / 64));
+  const startX = Math.min(width - 1, Math.floor(stepX * 0.5));
+  const startY = Math.min(height - 1, Math.floor(stepY * 0.5));
+
+  const visSum = new Float64Array(4);
+  const coSum = new Float64Array(16);
+  const inv255 = 1 / 255;
+  let sampleCount = 0;
+
+  for (let y = startY; y < height; y += stepY) {
+    const rowOff = y * width;
+    for (let x = startX; x < width; x += stepX) {
+      const p = rowOff + x;
+      const tc = chArr[0][p] * inv255;
+      const tm = chArr[1][p] * inv255;
+      const ty = chArr[2][p] * inv255;
+      const tk = chArr[3][p] * inv255;
+
+      const vc = HVS_CHANNEL_WEIGHTS[0] * (4 * tc * (1 - tc));
+      const vm = HVS_CHANNEL_WEIGHTS[1] * (4 * tm * (1 - tm));
+      const vy = HVS_CHANNEL_WEIGHTS[2] * (4 * ty * (1 - ty));
+      const vk = HVS_CHANNEL_WEIGHTS[3] * (4 * tk * (1 - tk));
+
+      visSum[0] += vc;
+      visSum[1] += vm;
+      visSum[2] += vy;
+      visSum[3] += vk;
+
+      coSum[0 * 4 + 1] += vc * vm;
+      coSum[0 * 4 + 2] += vc * vy;
+      coSum[0 * 4 + 3] += vc * vk;
+      coSum[1 * 4 + 2] += vm * vy;
+      coSum[1 * 4 + 3] += vm * vk;
+      coSum[2 * 4 + 3] += vy * vk;
+      sampleCount++;
+    }
+  }
+
+  if (sampleCount === 0) {
+    return computeRosetteAngles(theta);
+  }
+
+  const invSamples = 1 / sampleCount;
+  const vis = new Float64Array(4);
+  for (let i = 0; i < 4; i++) {
+    // Tiny prior breaks exact ties toward conventional K > M > C > Y hierarchy
+    vis[i] = visSum[i] * invSamples + 1e-6 * HVS_CHANNEL_WEIGHTS[i];
+  }
+
+  const slots = [
+    norm90(theta + 15), // slot 0: triad A (default C)
+    norm90(theta + 75), // slot 1: triad B (default M)
+    norm90(theta + 60), // slot 2: 15° bisector between slot 1 and slot 3 (default Y)
+    norm90(theta + 45), // slot 3: triad C / oblique minimum at θ=0 (default K)
+  ];
+
+  // Campbell-Kulikowski (1966) HVS orientation visibility factor cos^2(2 * s)
+  const slotObliqueCost = new Float64Array(4);
+  for (let s = 0; s < 4; s++) {
+    const twoRad = (2 * slots[s] * Math.PI) / 180;
+    const c2 = Math.cos(twoRad);
+    slotObliqueCost[s] = c2 * c2;
+  }
+
+  // Precompute which slot pairs are < 29° apart (the two 15° bisector pairs: (1,2) and (2,3))
+  const closeSlotPair = new Uint8Array(16);
+  for (let a = 0; a < 4; a++) {
+    for (let b = a + 1; b < 4; b++) {
+      if (clearance90(slots[a], slots[b]) < 29.0) {
+        closeSlotPair[a * 4 + b] = 1;
+        closeSlotPair[b * 4 + a] = 1;
+      }
+    }
+  }
+
+  const LAMBDA_15 = 4.0;
+  let bestCost = Infinity;
+  let bestPerm = PERMS_4[0]; // [0, 1, 2, 3] = { C: θ+15, M: θ+75, Y: θ+60, K: θ+45 }
+
+  for (let pi = 0; pi < PERMS_4.length; pi++) {
+    const perm = PERMS_4[pi];
+    let cost = 0;
+
+    // 1. Campbell-Kulikowski oblique visibility term
+    for (let ch = 0; ch < 4; ch++) {
+      cost += vis[ch] * slotObliqueCost[perm[ch]];
+    }
+
+    // 2. 15° bisector inter-screen co-occurrence penalty
+    for (let a = 0; a < 4; a++) {
+      for (let b = a + 1; b < 4; b++) {
+        if (closeSlotPair[perm[a] * 4 + perm[b]]) {
+          const co =
+            coSum[a * 4 + b] * invSamples +
+            1e-6 * HVS_CHANNEL_WEIGHTS[a] * HVS_CHANNEL_WEIGHTS[b];
+          cost += LAMBDA_15 * co;
+        }
+      }
+    }
+
+    // Tiny canonical slot preference (1e-9) keeps default C->0, M->1, Y->2, K->3 on exact symmetry
+    for (let ch = 0; ch < 4; ch++) {
+      if (perm[ch] !== ch) cost += 1e-9;
+    }
+
+    if (cost < bestCost) {
+      bestCost = cost;
+      bestPerm = perm;
+    }
+  }
+
+  return {
+    C: slots[bestPerm[0]],
+    M: slots[bestPerm[1]],
+    Y: slots[bestPerm[2]],
+    K: slots[bestPerm[3]],
+  };
+}
+
+/**
+ * Resolve CMYK screen angles for any named rosette preset (`auto`, `image-aware`,
+ * `fta`, `iso`, `flamenco`, `manual`).
+ *
+ * @param {string} [preset='auto']
+ * @param {number} [meshAngleDeg=0]
+ * @param {{ C: Uint8Array, M: Uint8Array, Y: Uint8Array, K: Uint8Array }|null} [channels=null]
+ * @param {number} [width=0]
+ * @param {number} [height=0]
+ * @param {{ C: number, M: number, Y: number, K: number }|null} [anglesOverride=null]
+ * @returns {{ C: number, M: number, Y: number, K: number }}
+ */
+function resolveRosettePresetAngles(
+  preset = 'auto',
+  meshAngleDeg = 0,
+  channels = null,
+  width = 0,
+  height = 0,
+  anglesOverride = null
+) {
+  const theta = Number.isFinite(meshAngleDeg) ? meshAngleDeg : 0;
+  switch (preset) {
+    case 'image-aware':
+      return assignImageAwareRosetteSlots(channels, width, height, theta);
+    case 'fta':
+      return {
+        C: norm90(theta + 7.5),
+        M: norm90(theta + 67.5),
+        Y: norm90(theta + 82.5),
+        K: norm90(theta + 37.5),
+      };
+    case 'iso':
+      return {
+        C: 15,
+        M: 75,
+        Y: 0,
+        K: 45,
+      };
+    case 'flamenco': {
+      const a = norm90(theta + 22.5);
+      return { C: a, M: a, Y: a, K: a };
+    }
+    case 'manual':
+      if (anglesOverride && typeof anglesOverride === 'object') {
+        return {
+          C: norm90(anglesOverride.C),
+          M: norm90(anglesOverride.M),
+          Y: norm90(anglesOverride.Y),
+          K: norm90(anglesOverride.K),
+        };
+      }
+      return computeRosetteAngles(theta);
+    case 'auto':
+    default:
+      return computeRosetteAngles(theta);
+  }
+}
+
 /**
  * Normalized sinc(u) = sin(pi * u) / (pi * u), with sinc(0) = 1.
  *
@@ -414,9 +689,13 @@ module.exports = {
   SEVERE_CONTRAST_THRESHOLD,
   SEVERE_WAVELENGTH_IN_MIN,
   SEVERE_CLEARANCE_DEG_MIN,
+  ROSETTE_PRESETS,
+  ROSETTE_PRESET_IDS,
   norm90,
   clearance90,
   computeRosetteAngles,
+  assignImageAwareRosetteSlots,
+  resolveRosettePresetAngles,
   sinc,
   besselJ1,
   jinc2,

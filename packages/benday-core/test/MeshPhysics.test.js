@@ -36,7 +36,9 @@ describe('Zero-Dependency Mandate (benday-core)', () => {
 });
 
 describe('MeshPhysics', () => {
-  it('exposes standard plain-weave roll catalog (including 196-55) and 20 official SAATI presets', () => {
+  it('exposes standard plain-weave roll catalog (with 355-31 studio default) and 20 official SAATI presets', () => {
+    expect(MeshPhysics.DEFAULT_MESH_TPI).toBe(355);
+    expect(MeshPhysics.DEFAULT_THREAD_UM).toBe(31);
     expect(STANDARD_THREAD_UM).toEqual({
       110: 80,
       156: 64,
@@ -45,7 +47,7 @@ describe('MeshPhysics', () => {
       230: 48,
       280: 40,
       305: 34,
-      355: 34,
+      355: 31,
       380: 31,
       420: 27,
     });

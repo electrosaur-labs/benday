@@ -3,9 +3,12 @@ import BendayCore from '../index.js';
 
 const {
   RosetteAngles,
+  ROSETTE_PRESETS,
   norm90,
   clearance90,
   computeRosetteAngles,
+  assignImageAwareRosetteSlots,
+  resolveRosettePresetAngles,
   besselJ1,
   analyzeMoire,
   computeMeshSpec,
@@ -126,5 +129,91 @@ describe('RosetteAngles & 2D Harmonic Moiré Guard', () => {
     expect(alignedThird.warnings).toContain(RosetteAngles.WARN_SEVERE_MOIRE);
     expect(alignedThird.maxContrast).toBeGreaterThanOrEqual(0.03);
     expect(thirdHarmonic).toBeDefined();
+  });
+
+  it('resolves all 6 ROSETTE_PRESETS and computes Image-Aware slot assignment in < 2 ms', () => {
+    expect(ROSETTE_PRESETS.map((p) => p.id)).toEqual([
+      'auto',
+      'image-aware',
+      'fta',
+      'iso',
+      'flamenco',
+      'manual',
+    ]);
+
+    expect(resolveRosettePresetAngles('auto', 10)).toEqual({
+      C: 25,
+      M: 85,
+      Y: 70,
+      K: 55,
+    });
+    expect(resolveRosettePresetAngles('fta', 0)).toEqual({
+      C: 7.5,
+      M: 67.5,
+      Y: 82.5,
+      K: 37.5,
+    });
+    expect(resolveRosettePresetAngles('iso', 22)).toEqual({
+      C: 15,
+      M: 75,
+      Y: 0,
+      K: 45,
+    });
+    expect(resolveRosettePresetAngles('flamenco', 5)).toEqual({
+      C: 27.5,
+      M: 27.5,
+      Y: 27.5,
+      K: 27.5,
+    });
+    expect(
+      resolveRosettePresetAngles('manual', 0, null, 0, 0, { C: 12, M: 72, Y: 57, K: 42 })
+    ).toEqual({
+      C: 12,
+      M: 72,
+      Y: 57,
+      K: 42,
+    });
+
+    // Scenario A: Cyan + Yellow duotone (K=0, M=0, C=128, Y=128) at meshAngle = 0
+    // C should win the prime 45° oblique-minimum slot, and C & Y must be separated by 30° (not 15°)!
+    const W = 128;
+    const H = 128;
+    const duotone = {
+      C: new Uint8Array(W * H).fill(128),
+      M: new Uint8Array(W * H),
+      Y: new Uint8Array(W * H).fill(128),
+      K: new Uint8Array(W * H),
+    };
+    const duoAngles = assignImageAwareRosetteSlots(duotone, W, H, 0);
+    expect(duoAngles.C).toBe(45);
+    expect(clearance90(duoAngles.C, duoAngles.Y)).toBeCloseTo(30, 8);
+
+    // Scenario B: Flesh-tone portrait dominated by Magenta midtones (M=128, Y=120, C=0, K=0)
+    // M should win the 45° oblique-minimum slot!
+    const portrait = {
+      C: new Uint8Array(W * H),
+      M: new Uint8Array(W * H).fill(128),
+      Y: new Uint8Array(W * H).fill(120),
+      K: new Uint8Array(W * H),
+    };
+    const portraitAngles = assignImageAwareRosetteSlots(portrait, W, H, 0);
+    expect(portraitAngles.M).toBe(45);
+
+    // Performance budget: <= 4096-sample stride executes in < 2 ms even on 2000 x 2000 (4 MP)
+    const bigW = 2000;
+    const bigH = 2000;
+    const big = {
+      C: new Uint8Array(bigW * bigH).fill(90),
+      M: new Uint8Array(bigW * bigH).fill(120),
+      Y: new Uint8Array(bigW * bigH).fill(140),
+      K: new Uint8Array(bigW * bigH).fill(110),
+    };
+    // Warm up JIT once before timing
+    assignImageAwareRosetteSlots(big, bigW, bigH, 0);
+    const t0 = performance.now();
+    const bigAngles = assignImageAwareRosetteSlots(big, bigW, bigH, 0);
+    const elapsedMs = performance.now() - t0;
+    expect(bigAngles.K).toBe(45);
+    expect(elapsedMs).toBeLessThan(2.0);
   });
 });

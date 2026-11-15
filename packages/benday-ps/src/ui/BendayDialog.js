@@ -1,9 +1,19 @@
 'use strict';
 
-const { halftoneCmyk, halftoneChannel, SAATI_MESH_PRESETS } = require('@electrosaur-labs/benday-core');
+const bendayCore = require('@electrosaur-labs/benday-core');
+const {
+  applyDotGainPullback,
+  computeGrayStepsPerCell,
+  SAATI_MESH_PRESETS,
+} = bendayCore;
 const { encodeRgbaToPngDataUrl } = require('../utils/pngDataUrl');
+const { CreditsController } = require('./CreditsController');
 
 const MAX_PROXY_EDGE = 840;
+const MAX_FIT_SUPER_EDGE = 1400;
+const MAX_HVS_SAMPLE_EDGE = 192;
+const BLINK_HOLD_MS = 300;
+const BLINK_INTERVAL_MS = 400;
 const LOUPE_SIZE = 256;
 const VIEWPORT_HALO_PX = 16;
 const MAX_DIRECT_ZOOM_EDGE = 960;
@@ -296,25 +306,34 @@ function buildAspectPreservingProxy(channels, srcW, srcH, maxEdge = MAX_PROXY_ED
 }
 
 /**
- * Apply active `tailMode` tonal transfer (`hybrid` linear, `cutoff` clip, `clamp` floor/ceiling)
- * to area-averaged proxy CMYK channels when halftone cells are sub-pixel (`cellPitchPreviewPx < 2.5`)
- * in `Fit` mode, eliminating fake Nyquist display moiré while preserving exact color & tail behavior.
+ * Apply active `dotGain` pullback and `tailMode` tonal transfer (`hybrid` linear, `cutoff` clip,
+ * `clamp` floor/ceiling) to area-averaged proxy CMYK channels when halftone cells are sub-pixel
+ * (`cellPitchPreviewPx < 2.5`) in `Fit` mode, eliminating fake Nyquist display moiré while
+ * preserving exact color, dot-gain pullback, 0%/100% solid sovereignty, and tail behavior.
  */
-function applyFitTailTransferChannels(proxyChannels, count, tMin, tMax, tailMode) {
-  if (tailMode === 'hybrid') {
+function applyFitTailTransferChannels(proxyChannels, count, tMin, tMax, tailMode, dotGain = 0) {
+  const hasDotGain = Number.isFinite(dotGain) && dotGain > 0;
+  if (tailMode === 'hybrid' && !hasDotGain) {
     return proxyChannels;
   }
   const minByte = Math.max(1, Math.min(254, Math.round(tMin * 255)));
   const maxByte = Math.max(minByte, Math.min(254, Math.round(tMax * 255)));
+  const inv255 = 1 / 255;
   const out = {};
 
   for (let c = 0; c < CHANNEL_KEYS.length; c++) {
     const key = CHANNEL_KEYS[c];
     const src = proxyChannels[key];
     const dst = new Uint8Array(count);
-    if (tailMode === 'cutoff') {
-      for (let i = 0; i < count; i++) {
-        const v = src[i];
+    for (let i = 0; i < count; i++) {
+      let v = src[i];
+      if (hasDotGain && v > 0 && v < 255) {
+        const tFilm = applyDotGainPullback(v * inv255, dotGain);
+        v = Math.max(1, Math.min(254, Math.round(tFilm * 255)));
+      }
+      if (tailMode === 'hybrid') {
+        dst[i] = v;
+      } else if (tailMode === 'cutoff') {
         if (v === 0 || v < minByte) {
           dst[i] = 0;
         } else if (v === 255 || v > maxByte) {
@@ -322,11 +341,8 @@ function applyFitTailTransferChannels(proxyChannels, count, tMin, tMax, tailMode
         } else {
           dst[i] = v;
         }
-      }
-    } else {
-      // 'clamp': pure 0 stays 0, pure 255 stays 255, interior (0, 255) clamps into [minByte, maxByte]
-      for (let i = 0; i < count; i++) {
-        const v = src[i];
+      } else {
+        // 'clamp': pure 0 stays 0, pure 255 stays 255, interior (0, 255) clamps into [minByte, maxByte]
         if (v === 0 || v === 255) {
           dst[i] = v;
         } else if (v < minByte) {
@@ -344,53 +360,65 @@ function applyFitTailTransferChannels(proxyChannels, count, tMin, tMax, tailMode
 }
 
 /**
- * Render `Fit`-mode RGBA preview without sub-pixel binary Nyquist aliasing:
+ * Compute 4-channel `{ C, M, Y, K }` `Fit`-mode tonal/halftone buffers at `(pW, pH)` without
+ * sub-pixel binary Nyquist aliasing:
  * - When `cellPitchPreviewPx < 2.5`, integrates area-averaged CMYK per preview pixel with active
- *   `tailMode` tonal transfer and SWOP Coated LUT.
+ *   `bvg` edge conditioning, `dotGain` pullback, and `tailMode` tonal transfer.
  * - When `cellPitchPreviewPx >= 2.5` (small documents or very coarse screens), runs real
- *   `halftoneCmyk` at up to `4×4` supersamples per preview pixel and box-averages to `(pW, pH)`.
+ *   `halftoneCmyk` at up to `2×` preview edge capped to `MAX_FIT_SUPER_EDGE = 1400` (`>= 5 px`
+ *   per halftone cell, `> 2×` Nyquist) and box-averages to `(pW, pH)`.
  */
-function renderSupersampledProxyRgba(proxy, docW, docH, snap, fullChannels = null) {
+function computeSupersampledProxyChannels(proxy, docW, docH, snap, fullChannels = null) {
   const { width: pW, height: pH, channels: proxyCh } = proxy;
   const spec = snap.meshSpec;
   const tMin = spec ? spec.tMin : 0.12;
   const tMax = spec ? spec.tMax : 0.88;
   const tailMode = snap.tailMode || 'hybrid';
-  const previewMode = snap.previewMode || 'composite';
+  const dotGain = snap.dotGain || 0;
+  const bvg = Boolean(snap.bvg);
   const cellPitchPx = spec ? spec.cellPitchPx : 8;
   const cellPitchPreviewPx = cellPitchPx * (pW / Math.max(1, docW));
 
   if (cellPitchPreviewPx >= 2.5 && fullChannels) {
-    const targetSuperW = Math.min(docW, pW * 4);
-    const targetSuperH = Math.min(docH, pH * 4);
-    const superSrc = buildAspectPreservingProxy(fullChannels, docW, docH, MAX_PROXY_EDGE, {
-      width: targetSuperW,
-      height: targetSuperH,
-    });
+    const maxSuperEdge = Math.min(MAX_FIT_SUPER_EDGE, Math.max(pW, pH) * 2);
+    const superSrc = buildAspectPreservingProxy(fullChannels, docW, docH, maxSuperEdge);
     const dpiScale = superSrc.width / docW;
     const baseDpi = (spec && spec.dpi) || snap.dpi || 300;
-    const ht = halftoneCmyk(superSrc.channels, superSrc.width, superSrc.height, {
+    const ht = bendayCore.halftoneCmyk(superSrc.channels, superSrc.width, superSrc.height, {
       meshTpi: snap.meshTpi,
       threadDiaUm: snap.threadDiaUm,
       ruleOfN: snap.ruleOfN,
       dpi: baseDpi * dpiScale,
       lpiOverride: snap.lpiOverride == null ? spec.lpiActive : snap.lpiOverride,
       meshAngleDeg: snap.meshAngleDeg,
-      anglesOverride: snap.anglesOverride,
+      rosettePreset: 'manual',
+      anglesOverride: snap.anglesOverride || snap.angles,
       tailMode,
+      dotGain,
+      bvg,
     });
     const avgPlates = buildAspectPreservingProxy(
-      ht.plates,
+      ht.screens,
       superSrc.width,
       superSrc.height,
       MAX_PROXY_EDGE,
       { width: pW, height: pH }
     );
-    return renderPreviewRgba(avgPlates.channels, pW, pH, previewMode);
+    return avgPlates.channels;
   }
 
-  const transferred = applyFitTailTransferChannels(proxyCh, pW * pH, tMin, tMax, tailMode);
-  return renderPreviewRgba(transferred, pW, pH, previewMode);
+  const baseCh = bvg
+    ? bendayCore.snapCmykEdges(proxyCh, pW, pH, { cellPitchPx: Math.max(2, cellPitchPreviewPx) })
+    : proxyCh;
+  return applyFitTailTransferChannels(baseCh, pW * pH, tMin, tMax, tailMode, dotGain);
+}
+
+/**
+ * Render `Fit`-mode RGBA preview without sub-pixel binary Nyquist aliasing.
+ */
+function renderSupersampledProxyRgba(proxy, docW, docH, snap, fullChannels = null) {
+  const plates = computeSupersampledProxyChannels(proxy, docW, docH, snap, fullChannels);
+  return renderPreviewRgba(plates, proxy.width, proxy.height, snap.previewMode || 'composite');
 }
 
 /**
@@ -545,11 +573,22 @@ class BendayDialog {
 
     this._fullData = null; // { channels: { C, M, Y, K }, width, height, dpi }
     this._proxy = null;    // { width, height, scaleX, scaleY, channels }
+    this._hvsCrop = null;  // { width, height, channels } native-DPI center sample for < 5 ms HVS ΔE
     this._meanInkPct = { C: 0, M: 0, Y: 0, K: 0 };
 
     // Cached current-view PNG data URLs for < 2 ms zero-lag ORIGINAL <-> Halftone toggle
     this._halftoneDataUrl = '';
     this._originalDataUrl = '';
+
+    // Cached 4-channel view plates & HVS telemetry keyed by physics config (instant C/M/Y/K switches)
+    this._viewPlatesCache = null;
+    this._hvsCache = null;
+
+    // Non-blocking 60 fps slider coalescing & cold-mode-switch timers
+    this._isSliderDragging = false;
+    this._draggingSliderEl = null;
+    this._sliderPreviewTimer = null;
+    this._modeSwitchTimer = null;
 
     // Blink Comparator & Pan state
     this._showingOriginal = false;
@@ -571,6 +610,7 @@ class BendayDialog {
     this._isApplying = false;
 
     this._bindElements();
+    this.credits = this.els.creditsOverlay ? new CreditsController(this.els.creditsOverlay) : null;
     this._populateMeshPresetsIfNeeded();
     this._attachListeners();
     this._unsubscribe = this.state.subscribe((snap, reason) => {
@@ -581,9 +621,20 @@ class BendayDialog {
 
   destroy() {
     this._clearBlinkTimers();
+    if (this.credits) {
+      this.credits.destroy();
+    }
     if (this._scrollDebounceTimer) {
       clearTimeout(this._scrollDebounceTimer);
       this._scrollDebounceTimer = null;
+    }
+    if (this._sliderPreviewTimer) {
+      clearTimeout(this._sliderPreviewTimer);
+      this._sliderPreviewTimer = null;
+    }
+    if (this._modeSwitchTimer) {
+      clearTimeout(this._modeSwitchTimer);
+      this._modeSwitchTimer = null;
     }
     if (this._keyHandler && this.doc) {
       this.doc.removeEventListener('keydown', this._keyHandler);
@@ -593,6 +644,33 @@ class BendayDialog {
       this._unsubscribe();
       this._unsubscribe = null;
     }
+  }
+
+  /**
+   * Dismiss the highest-priority modal overlay (`confirm-overlay` -> `manifesto-broadside` ->
+   * `credits-overlay`) and return `true` if dismissed. Non-modal view states (`Original` toggle,
+   * solo channel view) do NOT swallow `Escape`, so 1 `Escape` always closes `Benday` immediately.
+   */
+  dismissTopTransientLayer() {
+    const confirmOverlay = this._el('confirm-overlay');
+    if (confirmOverlay && confirmOverlay.classList.contains('visible')) {
+      if (typeof confirmOverlay._cancelConfirm === 'function') {
+        confirmOverlay._cancelConfirm();
+      } else {
+        confirmOverlay.classList.remove('visible');
+        confirmOverlay.setAttribute('style', 'display: none');
+      }
+      return true;
+    }
+    if (this.credits && this.credits.isManifestoOpen) {
+      this.credits.closeManifesto();
+      return true;
+    }
+    if (this.credits && this.credits.isOpen()) {
+      this.credits.close();
+      return true;
+    }
+    return false;
   }
 
   _el(id) {
@@ -606,6 +684,7 @@ class BendayDialog {
       statMeshLpi: this._el('stat-mesh-lpi'),
       statMinDot: this._el('stat-min-dot'),
       moireBadge: this._el('moire-status-badge'),
+      hvsTelemetry: this._el('hvs-telemetry'),
       previewStatus: this._el('benday-preview-status'),
 
       loupeZoom: this._el('loupe-zoom'),
@@ -618,6 +697,7 @@ class BendayDialog {
       previewScrollSizer: this._el('preview-scroll-sizer'),
       previewImg: this._el('preview-img'),
       previewPlaceholder: this._el('preview-placeholder'),
+      busyBadge: this._el('preview-busy-badge'),
       originalBadge: this._el('original-badge'),
 
       loupeContainer: this._el('loupe-container'),
@@ -632,7 +712,8 @@ class BendayDialog {
 
       btnReread: this._el('btn-reread'),
       btnResetTop: this._el('btn-reset-top'),
-      btnCancel: this._el('btn-benday-cancel'),
+      btnSaveConfig: this._el('btn-save-config'),
+      btnLoadConfig: this._el('btn-load-config'),
       btnApply: this._el('btn-benday-apply'),
 
       meshPreset: this._el('input-mesh-preset'),
@@ -655,6 +736,16 @@ class BendayDialog {
 
       btnTailRevert: this._el('btn-tail-revert'),
 
+      dotGainSlider: this._el('slider-dot-gain'),
+      dotGainVal: this._el('readout-dot-gain'),
+      btnDotGainRevert: this._el('btn-dot-gain-revert'),
+
+      bvgLabel: this._el('lbl-bvg'),
+      chkBvg: this._el('chk-bvg'),
+      chkBvgBox: this._el('chk-bvg-box'),
+      btnBvgRevert: this._el('btn-bvg-revert'),
+
+      rosettePreset: this._el('select-rosette-preset'),
       angleC: this._el('input-angle-c'),
       angleM: this._el('input-angle-m'),
       angleY: this._el('input-angle-y'),
@@ -665,20 +756,27 @@ class BendayDialog {
       physOpenArea: this._el('phys-open-area'),
       physMinDot: this._el('phys-min-dot'),
       physAmRange: this._el('phys-am-range'),
+      physHvsQuality: this._el('phys-hvs-quality'),
       warningsBox: this._el('benday-warnings-box'),
       errorBanner: this._el('benday-error-banner'),
+
+      btnShowCredits: this._el('btn-show-credits'),
+      creditsOverlay: this._el('credits-overlay'),
     };
   }
 
   _populateMeshPresetsIfNeeded() {
     const sel = this.els.meshPreset;
-    if (!sel || sel.options.length > 0) return;
+    const hasOptions =
+      (sel && sel.options && sel.options.length > 0) ||
+      (sel && sel.children && sel.children.length > 0);
+    if (!sel || hasOptions) return;
     for (let i = 0; i < SAATI_MESH_PRESETS.length; i++) {
       const p = SAATI_MESH_PRESETS[i];
       const opt = this.doc.createElement('option');
       opt.value = p.id;
       opt.textContent = p.label;
-      if (p.id === '230-48') opt.selected = true;
+      if (p.id === '355-31') opt.selected = true;
       sel.appendChild(opt);
     }
     const customOpt = this.doc.createElement('option');
@@ -700,14 +798,36 @@ class BendayDialog {
 
   _bindSliderControl(el, onNumericValue) {
     if (!el) return;
-    const handler = () => {
+    el.addEventListener('input', () => {
       const val = readControlNumber(el);
+      if (!Number.isFinite(val)) return;
+      this._isSliderDragging = true;
+      this._draggingSliderEl = el;
+      onNumericValue(val);
+    });
+    el.addEventListener('change', () => {
+      const val = readControlNumber(el);
+      const hadPendingTimer = Boolean(this._sliderPreviewTimer);
+      this._isSliderDragging = false;
+      this._draggingSliderEl = null;
+      if (this._sliderPreviewTimer) {
+        clearTimeout(this._sliderPreviewTimer);
+        this._sliderPreviewTimer = null;
+      }
+      const prevUrl = this._halftoneDataUrl;
       if (Number.isFinite(val)) {
         onNumericValue(val);
       }
-    };
-    el.addEventListener('input', handler);
-    el.addEventListener('change', handler);
+      if (
+        hadPendingTimer &&
+        this._halftoneDataUrl === prevUrl &&
+        this._fullData &&
+        !this.state.error
+      ) {
+        this._renderMainPreview(false);
+      }
+      setElementVisible(this.els.busyBadge, false, 'block');
+    });
   }
 
   _bindLiveNumberInput(el, onValue) {
@@ -742,14 +862,18 @@ class BendayDialog {
       });
     });
 
-    // Keyboard shortcuts: Escape un-solos channel (or dismisses modal); Cmd/Ctrl + 0 / 1 / + / - controls Zoom
+    // Keyboard shortcuts: strict 5-step Escape priority + Cmd/Ctrl + 0 / 1 / + / - Zoom
     this._keyHandler = (e) => {
       if (e.key === 'Escape') {
-        if (this.state.previewMode !== 'composite') {
+        if (this.dismissTopTransientLayer()) {
           e.preventDefault();
           e.stopPropagation();
-          this.state.setPreviewMode('composite');
+          if (typeof this.callbacks.onEscapeIntercepted === 'function') {
+            this.callbacks.onEscapeIntercepted();
+          }
         } else if (!this._isApplying && this.callbacks.onCancel) {
+          this._clearBlinkTimers();
+          this._blinkMode = false;
           this.callbacks.onCancel();
         }
         return;
@@ -833,10 +957,28 @@ class BendayDialog {
       });
     }
 
-    if (els.btnCancel) {
-      els.btnCancel.addEventListener('click', () => {
-        if (!this._isApplying && this.callbacks.onCancel) {
-          this.callbacks.onCancel();
+    if (els.btnSaveConfig) {
+      els.btnSaveConfig.addEventListener('click', async () => {
+        if (this._isApplying) return;
+        if (this.callbacks.onSaveConfig) {
+          await this.callbacks.onSaveConfig();
+        }
+      });
+    }
+
+    if (els.btnLoadConfig) {
+      els.btnLoadConfig.addEventListener('click', async () => {
+        if (this._isApplying) return;
+        if (this.callbacks.onLoadConfig) {
+          await this.callbacks.onLoadConfig();
+        }
+      });
+    }
+
+    if (els.btnShowCredits) {
+      els.btnShowCredits.addEventListener('click', () => {
+        if (this.credits) {
+          this.credits.open();
         }
       });
     }
@@ -888,7 +1030,7 @@ class BendayDialog {
     if (els.btnMeshRevert) {
       els.btnMeshRevert.addEventListener('click', () => {
         this._customMeshExpanded = false;
-        this.state.setMeshPreset(230, 48);
+        this.state.setMeshPreset(355, 31);
       });
     }
 
@@ -950,6 +1092,51 @@ class BendayDialog {
       });
     }
 
+    // Press Dot Gain Compensation <sp-slider> (0%..20%) + revert
+    this._bindSliderControl(els.dotGainSlider, (val) => {
+      if (Math.abs(val - this.state.dotGain) > 1e-6) {
+        this.state.setDotGain(val);
+      }
+    });
+    if (els.btnDotGainRevert) {
+      els.btnDotGainRevert.addEventListener('click', () => {
+        this.state.setDotGain(0);
+      });
+    }
+
+    // Crisp Type & Linework (BVG) checkbox + direct click listener for UXP Torq + revert
+    const bvgClickTarget = els.bvgLabel || els.chkBvgBox;
+    if (bvgClickTarget) {
+      bvgClickTarget.addEventListener('click', (e) => {
+        if (e.target === els.chkBvg) return;
+        e.preventDefault();
+        this.state.setBvg(!this.state.bvg);
+      });
+    }
+    if (els.chkBvg) {
+      els.chkBvg.addEventListener('change', () => {
+        this.state.setBvg(Boolean(els.chkBvg.checked));
+      });
+    }
+    if (els.btnBvgRevert) {
+      els.btnBvgRevert.addEventListener('click', () => {
+        this.state.setBvg(true);
+      });
+    }
+
+    // Rosette angle preset dropdown + 4-up manual inputs + Auto revert
+    if (els.rosettePreset) {
+      els.rosettePreset.addEventListener('change', () => {
+        const presetId = els.rosettePreset.value;
+        if (presetId === 'manual') {
+          const snap = this.state.getSnapshot();
+          this.state.setAnglesOverride({ ...snap.angles });
+        } else {
+          this.state.setRosettePreset(presetId);
+        }
+      });
+    }
+
     // Rosette angles ('input' + 'change') & Auto revert
     const angleInputs = [
       ['C', els.angleC],
@@ -989,7 +1176,10 @@ class BendayDialog {
    * Encodes `_originalDataUrl` lazily on first click for a given viewport/mode so slider drags skip it.
    */
   _applyOriginalToggleView(showOrig) {
-    if (!this._fullData || !this.els.previewImg) return;
+    if (!this._fullData || !this.els.previewImg) {
+      this._showingOriginal = false;
+      return;
+    }
     this._showingOriginal = Boolean(showOrig);
     if (this._showingOriginal && !this._originalDataUrl && typeof this._buildLazyOriginalUrl === 'function') {
       this._originalDataUrl = this._buildLazyOriginalUrl();
@@ -1059,9 +1249,9 @@ class BendayDialog {
           this._applyOriginalToggleView(true);
           this._blinkInterval = setInterval(() => {
             this._applyOriginalToggleView(!this._showingOriginal);
-          }, 400);
+          }, BLINK_INTERVAL_MS);
         }
-      }, 320);
+      }, BLINK_HOLD_MS);
     };
 
     const onPointerMove = (e) => {
@@ -1138,18 +1328,33 @@ class BendayDialog {
    */
   setFullDocumentData(fullData) {
     this._clearBlinkTimers();
+    if (this._sliderPreviewTimer) {
+      clearTimeout(this._sliderPreviewTimer);
+      this._sliderPreviewTimer = null;
+    }
+    if (this._modeSwitchTimer) {
+      clearTimeout(this._modeSwitchTimer);
+      this._modeSwitchTimer = null;
+    }
+    this._isSliderDragging = false;
+    this._draggingSliderEl = null;
+    this._viewPlatesCache = null;
+    this._hvsCache = null;
     this._showingOriginal = false;
     this._blinkMode = false;
     this._viewCenterNorm = { x: 0.5, y: 0.5 };
     this._origUrlCacheKey = '';
     this._buildLazyOriginalUrl = null;
     setElementVisible(this.els.originalBadge, false, 'block');
+    setElementVisible(this.els.busyBadge, false, 'block');
 
     if (!fullData || !fullData.channels || !(fullData.width > 0) || !(fullData.height > 0)) {
       this._fullData = null;
       this._proxy = null;
+      this._hvsCrop = null;
       this._halftoneDataUrl = '';
       this._originalDataUrl = '';
+      this.state.setChannelStatsSource(null, 0, 0, false);
       if (this.els.previewImg) {
         this.els.previewImg.removeAttribute('src');
         setElementVisible(this.els.previewImg, false, 'block');
@@ -1169,6 +1374,32 @@ class BendayDialog {
       MAX_PROXY_EDGE
     );
 
+    // Native-DPI center sample (`<= 192x192`) for `< 5 ms` 16-bit Engine CIELAB HVS ΔE telemetry
+    const sampleW = Math.min(fullData.width, MAX_HVS_SAMPLE_EDGE);
+    const sampleH = Math.min(fullData.height, MAX_HVS_SAMPLE_EDGE);
+    if (sampleW === fullData.width && sampleH === fullData.height) {
+      this._hvsCrop = {
+        width: sampleW,
+        height: sampleH,
+        channels: fullData.channels,
+      };
+    } else {
+      const sLeft = (fullData.width - sampleW) >> 1;
+      const sTop = (fullData.height - sampleH) >> 1;
+      const sampleCh = {};
+      for (let c = 0; c < CHANNEL_KEYS.length; c++) {
+        const k = CHANNEL_KEYS[c];
+        const src = fullData.channels[k];
+        const dst = new Uint8Array(sampleW * sampleH);
+        for (let y = 0; y < sampleH; y++) {
+          const sOff = (sTop + y) * fullData.width + sLeft;
+          dst.set(src.subarray(sOff, sOff + sampleW), y * sampleW);
+        }
+        sampleCh[k] = dst;
+      }
+      this._hvsCrop = { width: sampleW, height: sampleH, channels: sampleCh };
+    }
+
     const pCount = this._proxy.width * this._proxy.height;
     for (let c = 0; c < CHANNEL_KEYS.length; c++) {
       const k = CHANNEL_KEYS[c];
@@ -1178,6 +1409,12 @@ class BendayDialog {
       this._meanInkPct[k] = Math.round((sum / (pCount * 255)) * 100);
     }
 
+    this.state.setChannelStatsSource(
+      this._proxy.channels,
+      this._proxy.width,
+      this._proxy.height,
+      this.state.rosettePreset === 'image-aware'
+    );
     this.renderControls(this.state.getSnapshot());
     this._renderMainPreview(false);
   }
@@ -1250,12 +1487,14 @@ class BendayDialog {
       const baseDpi = this._fullData.dpi || snap.dpi || 300;
       const cfg = {
         ...this.state.exportEngineConfig(),
+        rosettePreset: 'manual',
+        anglesOverride: snap.anglesOverride || snap.angles,
         dpi: baseDpi / step,
         originX: (docW * 0.5 - left) / step,
         originY: (docH * 0.5 - top) / step,
       };
-      const ht = halftoneCmyk(tileCh, tileW, tileH, cfg);
-      tileRgba = renderPreviewRgba(ht.plates, tileW, tileH, snap.previewMode);
+      const ht = bendayCore.halftoneCmyk(tileCh, tileW, tileH, cfg);
+      tileRgba = renderPreviewRgba(ht.screens, tileW, tileH, snap.previewMode);
     }
 
     const loupeRgba = resampleRgbaToSquareLoupe(tileRgba, tileW, tileH, LOUPE_SIZE);
@@ -1273,22 +1512,32 @@ class BendayDialog {
     return dataUrl;
   }
 
-  _renderZoomedViewport(snap, preserveShowingOriginal = false) {
-    const zoom = snap.viewZoom;
-    const { width: docW, height: docH, dpi: docDpi, channels: fullCh } = this._fullData;
-    const container = this.els.previewContainer;
-    const sizer = this.els.previewScrollSizer;
-    const img = this.els.previewImg;
+  _buildPhysicsKey(snap, dpi) {
+    const effDpi = dpi || (this._fullData && this._fullData.dpi) || snap.dpi || 300;
+    const ang = snap.anglesOverride || snap.angles || { C: 15, M: 75, Y: 60, K: 45 };
+    return [
+      snap.meshTpi,
+      snap.threadDiaUm,
+      snap.ruleOfN,
+      snap.lpiOverride == null ? 'auto' : snap.lpiOverride,
+      snap.meshAngleDeg,
+      snap.rosettePreset || 'auto',
+      ang.C,
+      ang.M,
+      ang.Y,
+      ang.K,
+      snap.tailMode || 'hybrid',
+      snap.dotGain || 0,
+      snap.bvg ? 1 : 0,
+      effDpi,
+    ].join('|');
+  }
 
+  _computeZoomCropRect(zoom) {
+    const { width: docW, height: docH } = this._fullData;
+    const container = this.els.previewContainer;
     const sizerW = Math.max(1, Math.round(docW * zoom));
     const sizerH = Math.max(1, Math.round(docH * zoom));
-
-    if (container) container.classList.toggle('is-zoomed', true);
-    if (sizer) {
-      sizer.style.width = `${sizerW}px`;
-      sizer.style.height = `${sizerH}px`;
-    }
-
     const contW = container ? container.clientWidth : 0;
     const contH = container ? container.clientHeight : 0;
 
@@ -1320,82 +1569,126 @@ class BendayDialog {
       );
     }
 
-    const haloL = Math.max(0, docL - VIEWPORT_HALO_PX);
-    const haloT = Math.max(0, docT - VIEWPORT_HALO_PX);
-    const haloR = Math.min(docW, docR + VIEWPORT_HALO_PX);
-    const haloB = Math.min(docH, docB + VIEWPORT_HALO_PX);
-    const haloW = haloR - haloL;
-    const haloH = haloB - haloT;
+    return {
+      sizerW,
+      sizerH,
+      docL,
+      docT,
+      docR,
+      docB,
+      cropW: docR - docL,
+      cropH: docB - docT,
+    };
+  }
 
-    const activeKeys = snap.previewMode === 'composite' ? CHANNEL_KEYS : [snap.previewMode];
-    let haloCh;
-    if (haloL === 0 && haloT === 0 && haloW === docW && haloH === docH) {
-      haloCh = fullCh;
-    } else {
-      haloCh = {};
-      for (let c = 0; c < activeKeys.length; c++) {
-        const key = activeKeys[c];
-        const src = fullCh[key];
-        const dst = new Uint8Array(haloW * haloH);
-        for (let y = 0; y < haloH; y++) {
-          const sOff = (haloT + y) * docW + haloL;
-          dst.set(src.subarray(sOff, sOff + haloW), y * haloW);
-        }
-        haloCh[key] = dst;
-      }
+  _hasWarmViewPlatesCache(snap) {
+    if (!this._viewPlatesCache || !this._fullData || !this._proxy || snap.error) {
+      return false;
+    }
+    const effDpi = this._fullData.dpi || snap.dpi || 300;
+    const physicsKey = this._buildPhysicsKey(snap, effDpi);
+    if (typeof snap.viewZoom === 'number') {
+      const rect = this._computeZoomCropRect(snap.viewZoom);
+      const expectedZoomKey = `zoom:${rect.docL},${rect.docT},${rect.cropW},${rect.cropH},${snap.viewZoom}|${physicsKey}`;
+      return this._viewPlatesCache.key === expectedZoomKey;
+    }
+    const expectedFitKey = `fit:${this._proxy.width},${this._proxy.height}|${physicsKey}`;
+    return this._viewPlatesCache.key === expectedFitKey;
+  }
+
+  _renderZoomedViewport(snap, preserveShowingOriginal = false) {
+    const zoom = snap.viewZoom;
+    const { width: docW, height: docH, dpi: docDpi, channels: fullCh } = this._fullData;
+    const container = this.els.previewContainer;
+    const sizer = this.els.previewScrollSizer;
+    const img = this.els.previewImg;
+
+    const { sizerW, sizerH, docL, docT, docR, docB, cropW, cropH } =
+      this._computeZoomCropRect(zoom);
+
+    if (container) container.classList.toggle('is-zoomed', true);
+    if (sizer) {
+      sizer.style.width = `${sizerW}px`;
+      sizer.style.height = `${sizerH}px`;
     }
 
-    let rawPlates;
-    if (snap.previewMode === 'composite') {
+    const physicsKey = this._buildPhysicsKey(snap, docDpi || snap.dpi);
+    const zoomViewKey = `zoom:${docL},${docT},${cropW},${cropH},${zoom}|${physicsKey}`;
+
+    let croppedPlates;
+    let croppedOrig;
+
+    if (this._viewPlatesCache && this._viewPlatesCache.key === zoomViewKey) {
+      croppedPlates = this._viewPlatesCache.plates;
+      croppedOrig = this._viewPlatesCache.orig;
+    } else {
+      const haloL = Math.max(0, docL - VIEWPORT_HALO_PX);
+      const haloT = Math.max(0, docT - VIEWPORT_HALO_PX);
+      const haloR = Math.min(docW, docR + VIEWPORT_HALO_PX);
+      const haloB = Math.min(docH, docB + VIEWPORT_HALO_PX);
+      const haloW = haloR - haloL;
+      const haloH = haloB - haloT;
+
+      let haloCh;
+      if (haloL === 0 && haloT === 0 && haloW === docW && haloH === docH) {
+        haloCh = fullCh;
+      } else {
+        haloCh = {};
+        for (let c = 0; c < CHANNEL_KEYS.length; c++) {
+          const key = CHANNEL_KEYS[c];
+          const src = fullCh[key];
+          const dst = new Uint8Array(haloW * haloH);
+          for (let y = 0; y < haloH; y++) {
+            const sOff = (haloT + y) * docW + haloL;
+            dst.set(src.subarray(sOff, sOff + haloW), y * haloW);
+          }
+          haloCh[key] = dst;
+        }
+      }
+
       const cfg = {
         ...this.state.exportEngineConfig(),
+        rosettePreset: 'manual',
+        anglesOverride: snap.anglesOverride || snap.angles,
         dpi: docDpi || snap.dpi,
         originX: docW * 0.5 - haloL,
         originY: docH * 0.5 - haloT,
       };
-      rawPlates = halftoneCmyk(haloCh, haloW, haloH, cfg).plates;
-    } else {
-      const soloKey = snap.previewMode;
-      rawPlates = {
-        [soloKey]: halftoneChannel(haloCh[soloKey], haloW, haloH, {
-          meshSpec: snap.meshSpec,
-          angleDeg: snap.angles[soloKey],
-          tailMode: snap.tailMode || 'hybrid',
-          channelKey: soloKey,
-          originX: docW * 0.5 - haloL,
-          originY: docH * 0.5 - haloT,
-        }),
-      };
-    }
+      const rawPlates = bendayCore.halftoneCmyk(haloCh, haloW, haloH, cfg).screens;
 
-    const cropW = docR - docL;
-    const cropH = docB - docT;
-    const trimX = docL - haloL;
-    const trimY = docT - haloT;
+      const trimX = docL - haloL;
+      const trimY = docT - haloT;
 
-    let croppedPlates;
-    let croppedOrig;
-    if (trimX === 0 && trimY === 0 && cropW === haloW && cropH === haloH) {
-      croppedPlates = rawPlates;
-      croppedOrig = haloCh;
-    } else {
-      croppedPlates = {};
-      croppedOrig = {};
-      for (let c = 0; c < activeKeys.length; c++) {
-        const key = activeKeys[c];
-        const pSrc = rawPlates[key];
-        const oSrc = haloCh[key];
-        const pDst = new Uint8Array(cropW * cropH);
-        const oDst = new Uint8Array(cropW * cropH);
-        for (let y = 0; y < cropH; y++) {
-          const sOff = (trimY + y) * haloW + trimX;
-          const dOff = y * cropW;
-          pDst.set(pSrc.subarray(sOff, sOff + cropW), dOff);
-          oDst.set(oSrc.subarray(sOff, sOff + cropW), dOff);
+      if (trimX === 0 && trimY === 0 && cropW === haloW && cropH === haloH) {
+        croppedPlates = rawPlates;
+        croppedOrig = haloCh;
+      } else {
+        croppedPlates = {};
+        croppedOrig = {};
+        for (let c = 0; c < CHANNEL_KEYS.length; c++) {
+          const key = CHANNEL_KEYS[c];
+          const pSrc = rawPlates[key];
+          const oSrc = haloCh[key];
+          const pDst = new Uint8Array(cropW * cropH);
+          const oDst = new Uint8Array(cropW * cropH);
+          for (let y = 0; y < cropH; y++) {
+            const sOff = (trimY + y) * haloW + trimX;
+            const dOff = y * cropW;
+            pDst.set(pSrc.subarray(sOff, sOff + cropW), dOff);
+            oDst.set(oSrc.subarray(sOff, sOff + cropW), dOff);
+          }
+          croppedPlates[key] = pDst;
+          croppedOrig[key] = oDst;
         }
-        croppedPlates[key] = pDst;
-        croppedOrig[key] = oDst;
       }
+
+      this._viewPlatesCache = {
+        key: zoomViewKey,
+        plates: croppedPlates,
+        orig: croppedOrig,
+        width: cropW,
+        height: cropH,
+      };
     }
 
     const htNativeRgba = renderPreviewRgba(croppedPlates, cropW, cropH, snap.previewMode);
@@ -1435,12 +1728,63 @@ class BendayDialog {
     return { width: htScaled.width, height: htScaled.height, label: `${Math.round(zoom * 100)}%` };
   }
 
+  _updateHvsTelemetry(snap) {
+    const spec = snap && snap.meshSpec;
+    if (!spec) return;
+    const dpi = (this._fullData && this._fullData.dpi) || snap.dpi || 300;
+    const graySteps = computeGrayStepsPerCell(dpi, spec.lpiActive);
+
+    if (!this._hvsCrop) {
+      if (this.els.hvsTelemetry) {
+        this.els.hvsTelemetry.textContent = `-- ΔE · ${graySteps} steps`;
+      }
+      if (this.els.physHvsQuality) {
+        this.els.physHvsQuality.textContent = `-- ΔE · ${graySteps} gray steps`;
+      }
+      return;
+    }
+
+    const physicsKey = this._buildPhysicsKey(snap, dpi);
+    let hvs;
+    if (this._hvsCache && this._hvsCache.key === physicsKey) {
+      hvs = this._hvsCache.hvs;
+    } else {
+      const htSample = bendayCore.halftoneCmyk(
+        this._hvsCrop.channels,
+        this._hvsCrop.width,
+        this._hvsCrop.height,
+        {
+          ...this.state.exportEngineConfig(),
+          rosettePreset: 'manual',
+          anglesOverride: snap.anglesOverride || snap.angles,
+          dpi,
+        }
+      );
+      hvs = bendayCore.computeHvsQuality(
+        this._hvsCrop.channels,
+        htSample.screens,
+        this._hvsCrop.width,
+        this._hvsCrop.height,
+        { dpi, lpi: spec.lpiActive }
+      );
+      this._hvsCache = { key: physicsKey, hvs };
+    }
+
+    if (this.els.hvsTelemetry) {
+      this.els.hvsTelemetry.textContent = `HVS ΔE ${hvs.meanDeltaE.toFixed(1)} · ${hvs.grayStepsPerCell} steps`;
+    }
+    if (this.els.physHvsQuality) {
+      this.els.physHvsQuality.textContent = `ΔE ${hvs.meanDeltaE.toFixed(1)} (p95 ${hvs.p95DeltaE.toFixed(1)}) · ${hvs.grayStepsPerCell} gray steps`;
+    }
+  }
+
   _renderMainPreview(preserveShowingOriginal = false) {
     if (!this._fullData || !this._proxy || !this.els.previewImg) return;
     const snap = this.state.getSnapshot();
     if (snap.error || !snap.meshSpec) return;
 
     const t0 = Date.now();
+    this._updateHvsTelemetry(snap);
 
     if (typeof snap.viewZoom === 'number') {
       const info = this._renderZoomedViewport(snap, preserveShowingOriginal);
@@ -1461,23 +1805,41 @@ class BendayDialog {
       this.els.previewScrollSizer.style.height = '';
     }
 
-    let htRgba;
-    if (docW === pW && docH === pH && docW * docH <= 320 * 320) {
-      const cfg = {
-        ...this.state.exportEngineConfig(),
-        dpi: docDpi || snap.dpi,
-      };
-      const res = halftoneCmyk(this._fullData.channels, docW, docH, cfg);
-      htRgba = renderPreviewRgba(res.plates, docW, docH, snap.previewMode);
+    const physicsKey = this._buildPhysicsKey(snap, docDpi || snap.dpi);
+    const fitViewKey = `fit:${pW},${pH}|${physicsKey}`;
+
+    let plates;
+    if (this._viewPlatesCache && this._viewPlatesCache.key === fitViewKey) {
+      plates = this._viewPlatesCache.plates;
     } else {
-      htRgba = renderSupersampledProxyRgba(
-        this._proxy,
-        docW,
-        docH,
-        snap,
-        this._fullData.channels
-      );
+      if (docW === pW && docH === pH && docW * docH <= 320 * 320) {
+        const cfg = {
+          ...this.state.exportEngineConfig(),
+          rosettePreset: 'manual',
+          anglesOverride: snap.anglesOverride || snap.angles,
+          dpi: docDpi || snap.dpi,
+        };
+        const res = bendayCore.halftoneCmyk(this._fullData.channels, docW, docH, cfg);
+        plates = res.screens;
+      } else {
+        plates = computeSupersampledProxyChannels(
+          this._proxy,
+          docW,
+          docH,
+          snap,
+          this._fullData.channels
+        );
+      }
+      this._viewPlatesCache = {
+        key: fitViewKey,
+        plates,
+        orig: this._proxy.channels,
+        width: pW,
+        height: pH,
+      };
     }
+
+    const htRgba = renderPreviewRgba(plates, pW, pH, snap.previewMode);
 
     this._halftoneDataUrl = encodeRgbaToPngDataUrl(htRgba, pW, pH);
     const fitOrigKey = `fit:${pW},${pH},${snap.previewMode}`;
@@ -1524,10 +1886,7 @@ class BendayDialog {
     this._isApplying = Boolean(applying);
     if (this.els.btnApply) {
       this.els.btnApply.disabled = this._isApplying || Boolean(this.state.error);
-      this.els.btnApply.textContent = this._isApplying ? 'Applying…' : 'Apply Halftone';
-    }
-    if (this.els.btnCancel) {
-      this.els.btnCancel.disabled = this._isApplying;
+      this.els.btnApply.textContent = this._isApplying ? 'Halftoning…' : 'Halftone';
     }
     if (this.els.btnReread) {
       this.els.btnReread.disabled = this._isApplying;
@@ -1572,8 +1931,11 @@ class BendayDialog {
   }
 
   _onStateChange(snap, reason) {
+    if (reason === 'reset') {
+      this._customMeshExpanded = snap.meshPresetId === 'custom';
+    }
     this.renderControls(snap);
-    if (reason === 'previewZoom') {
+    if (reason === 'previewZoom' || reason === 'cropCenter') {
       return;
     }
     if (reason === 'viewZoom') {
@@ -1581,14 +1943,50 @@ class BendayDialog {
       this._renderMainPreview(this._showingOriginal);
       return;
     }
-    if (reason !== 'cropCenter') {
-      this._renderMainPreview(false);
+    if (
+      this._isSliderDragging &&
+      (reason === 'ruleOfN' || reason === 'meshAngleDeg' || reason === 'dotGain')
+    ) {
+      if (!this._fullData || snap.error) {
+        setElementVisible(this.els.busyBadge, false, 'block');
+        return;
+      }
+      setElementVisible(this.els.busyBadge, true, 'block');
+      if (this._sliderPreviewTimer) {
+        clearTimeout(this._sliderPreviewTimer);
+      }
+      this._sliderPreviewTimer = setTimeout(() => {
+        this._sliderPreviewTimer = null;
+        this._renderMainPreview(false);
+        setElementVisible(this.els.busyBadge, false, 'block');
+      }, 16);
+      return;
     }
+    if (reason === 'previewMode') {
+      if (this._modeSwitchTimer) {
+        clearTimeout(this._modeSwitchTimer);
+        this._modeSwitchTimer = null;
+      }
+      if (!this._fullData || snap.error || this._hasWarmViewPlatesCache(snap)) {
+        this._renderMainPreview(false);
+        setElementVisible(this.els.busyBadge, false, 'block');
+        return;
+      }
+      setElementVisible(this.els.busyBadge, true, 'block');
+      this._modeSwitchTimer = setTimeout(() => {
+        this._modeSwitchTimer = null;
+        this._renderMainPreview(false);
+        setElementVisible(this.els.busyBadge, false, 'block');
+      }, 12);
+      return;
+    }
+    this._renderMainPreview(false);
   }
 
   renderControls(snap) {
     const { els } = this;
     const activeEl = this.doc ? this.doc.activeElement : null;
+    const sliderActiveEl = this._draggingSliderEl || activeEl;
 
     if (els.docTitle) {
       els.docTitle.textContent = `${snap.docName} — ${snap.docWidth}×${snap.docHeight} @ ${snap.dpi} DPI`;
@@ -1639,9 +2037,37 @@ class BendayDialog {
       setElementVisible(els.btnTailRevert, snap.tailMode !== 'hybrid', 'inline-block');
     }
 
+    // Press Dot Gain Compensation (0%..20%)
+    const dotGainVal = snap.dotGain || 0;
+    if (els.dotGainSlider) writeControlValue(els.dotGainSlider, dotGainVal, sliderActiveEl);
+    if (els.dotGainVal) {
+      els.dotGainVal.textContent = `${dotGainVal.toFixed(1).replace(/\.0$/, '')}%`;
+    }
+    if (els.btnDotGainRevert) {
+      setElementVisible(els.btnDotGainRevert, dotGainVal > 1e-6, 'inline-block');
+    }
+
+    // Crisp Type & Linework (BVG) — defaulted On (true); revert arrow appears when unchecked
+    const bvgOn = Boolean(snap.bvg);
+    if (els.chkBvg) {
+      els.chkBvg.checked = bvgOn;
+    }
+    if (els.chkBvgBox) {
+      els.chkBvgBox.classList.toggle('is-checked', bvgOn);
+    }
+    if (els.btnBvgRevert) {
+      setElementVisible(els.btnBvgRevert, !bvgOn, 'inline-block');
+    }
+
     // Top Reset to Defaults button (always updated even on snap.error!)
     if (els.btnResetTop) {
       els.btnResetTop.disabled = this._isApplying || !snap.isModified;
+    }
+    if (els.btnSaveConfig) {
+      els.btnSaveConfig.disabled = this._isApplying || Boolean(snap.error);
+    }
+    if (els.btnLoadConfig) {
+      els.btnLoadConfig.disabled = this._isApplying;
     }
 
     // Paired SAATI Screen Mesh preset & Custom (TPI / µm) inline row
@@ -1657,20 +2083,20 @@ class BendayDialog {
     if (els.btnMeshRevert) {
       setElementVisible(
         els.btnMeshRevert,
-        snap.meshTpi !== 230 || Math.abs(snap.threadDiaUm - 48) > 1e-6,
+        snap.meshTpi !== 355 || Math.abs(snap.threadDiaUm - 31) > 1e-6,
         'inline-block'
       );
     }
 
     // Mesh bias angle <sp-slider> & number
-    if (els.meshAngleSlider) writeControlValue(els.meshAngleSlider, snap.meshAngleDeg);
+    if (els.meshAngleSlider) writeControlValue(els.meshAngleSlider, snap.meshAngleDeg, sliderActiveEl);
     if (els.meshAngleNum) writeControlValue(els.meshAngleNum, snap.meshAngleDeg, activeEl);
     if (els.btnMeshAngleRevert) {
       setElementVisible(els.btnMeshAngleRevert, Math.abs(snap.meshAngleDeg) > 1e-6, 'inline-block');
     }
 
     // Rule of N <sp-slider> & readout (default 5.0)
-    if (els.ruleNSlider) writeControlValue(els.ruleNSlider, snap.ruleOfN);
+    if (els.ruleNSlider) writeControlValue(els.ruleNSlider, snap.ruleOfN, sliderActiveEl);
     if (els.ruleNVal) {
       const dPx = snap.meshSpec ? ` · ${snap.meshSpec.dMinPx} px` : '';
       els.ruleNVal.textContent = `N = ${snap.ruleOfN.toFixed(1)}${dPx}`;
@@ -1687,13 +2113,16 @@ class BendayDialog {
       els.lpiInput.value = snap.lpiOverride == null ? '' : String(snap.lpiOverride);
     }
 
-    // Rosette angles
+    // Rosette angle preset & 4-up angle inputs
+    if (els.rosettePreset && els.rosettePreset !== activeEl) {
+      els.rosettePreset.value = snap.rosettePreset || (snap.anglesOverride ? 'manual' : 'auto');
+    }
     if (els.angleC) writeControlValue(els.angleC, snap.angles.C.toFixed(1).replace(/\.0$/, ''), activeEl);
     if (els.angleM) writeControlValue(els.angleM, snap.angles.M.toFixed(1).replace(/\.0$/, ''), activeEl);
     if (els.angleY) writeControlValue(els.angleY, snap.angles.Y.toFixed(1).replace(/\.0$/, ''), activeEl);
     if (els.angleK) writeControlValue(els.angleK, snap.angles.K.toFixed(1).replace(/\.0$/, ''), activeEl);
     if (els.btnAnglesAuto) {
-      const overridden = Boolean(snap.anglesOverride);
+      const overridden = Boolean(snap.anglesOverride) || (snap.rosettePreset && snap.rosettePreset !== 'auto');
       if (overridden) els.btnAnglesAuto.classList.add('is-locked');
       else els.btnAnglesAuto.classList.remove('is-locked');
       setElementVisible(els.btnAnglesAuto, overridden, 'inline-block');
@@ -1746,6 +2175,15 @@ class BendayDialog {
       }
       if (els.physAmRange) {
         els.physAmRange.textContent = `${(spec.tMin * 100).toFixed(0)}% – ${(spec.tMax * 100).toFixed(0)}% AM (${spec.cellPitchPx.toFixed(1)} px pitch)`;
+      }
+      if (!this._hvsCrop) {
+        const graySteps = computeGrayStepsPerCell(spec.dpi, spec.lpiActive);
+        if (els.hvsTelemetry) {
+          els.hvsTelemetry.textContent = `-- ΔE · ${graySteps} steps`;
+        }
+        if (els.physHvsQuality) {
+          els.physHvsQuality.textContent = `-- ΔE · ${graySteps} gray steps`;
+        }
       }
     }
 
@@ -1803,8 +2241,10 @@ class BendayDialog {
 
 module.exports = {
   SWOP_CORNERS,
+  MAX_FIT_SUPER_EDGE,
   BendayDialog,
   renderPreviewRgba,
   buildAspectPreservingProxy,
+  computeSupersampledProxyChannels,
   renderSupersampledProxyRgba,
 };

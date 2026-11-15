@@ -3,9 +3,11 @@ import BendayCore from '../index.js';
 
 const {
   computeMeshSpec,
+  applyDotGainPullback,
   halftoneChannel,
   halftoneCmyk,
   verifyPlateInvariants,
+  verifyScreenInvariants,
 } = BendayCore;
 
 describe('HalftoneEngine Core Guarantees', () => {
@@ -354,6 +356,91 @@ describe('HalftoneEngine Core Guarantees', () => {
           spread,
           `${cfg.label} pct=${pct}% channel spread (${vals.map((v) => v.toFixed(1)).join('/')})`
         ).toBeLessThanOrEqual(3.5);
+      }
+    }
+  });
+
+  it('INV-DG-1 & INV-DG-2: applies parabolic Press Dot Gain pullback with fixed points {0, 1}, exact 50% pullback, and 0 sub-D_min dot violations', () => {
+    // Mathematical curve invariants
+    expect(applyDotGainPullback(0, 15)).toBe(0);
+    expect(applyDotGainPullback(1, 15)).toBe(1);
+    expect(applyDotGainPullback(0.5, 0)).toBe(0.5);
+    expect(applyDotGainPullback(0.5, 15)).toBeCloseTo(0.35, 12);
+    expect(applyDotGainPullback(0.5, 20)).toBeCloseTo(0.30, 12);
+    expect(applyDotGainPullback(0.5, 35)).toBeCloseTo(0.30, 12); // clamped to 20%
+
+    // Strict monotonicity across [0, 1] at maximum 20% dot gain
+    let prev = -1;
+    for (let i = 0; i <= 255; i++) {
+      const y = applyDotGainPullback(i / 255, 20);
+      expect(y).toBeGreaterThan(prev);
+      prev = y;
+    }
+
+    const W = 160;
+    const H = 160;
+    const margin = 20;
+    const spec = computeMeshSpec({ meshTpi: 230, threadDiaUm: 48, ruleOfN: 5.0, dpi: 600 });
+
+    // Measure 50% midtone screen coverage at 0% vs 15% dotGain
+    const midSrc = new Uint8Array(W * H).fill(128);
+    // Stamp a 100% solid 6x6 registration mark to verify solid sovereignty under dotGain
+    for (let y = 8; y < 14; y++) {
+      for (let x = 8; x < 14; x++) {
+        midSrc[y * W + x] = 255;
+      }
+    }
+
+    const scr0 = halftoneChannel(midSrc, W, H, { meshSpec: spec, angleDeg: 45, dotGain: 0 });
+    const scr15 = halftoneChannel(midSrc, W, H, { meshSpec: spec, angleDeg: 45, dotGain: 15 });
+
+    const measureInterior = (buf) => {
+      let ink = 0;
+      let total = 0;
+      for (let y = margin; y < H - margin; y++) {
+        for (let x = margin; x < W - margin; x++) {
+          if (buf[y * W + x] === 255) ink++;
+          total++;
+        }
+      }
+      return ink / total;
+    };
+
+    const cov0 = measureInterior(scr0);
+    const cov15 = measureInterior(scr15);
+    expect(cov0 - cov15).toBeGreaterThan(0.11);
+    expect(cov0 - cov15).toBeLessThan(0.19);
+
+    // 100% solid mark must stay 255 despite 15% dotGain
+    for (let y = 8; y < 14; y++) {
+      for (let x = 8; x < 14; x++) {
+        expect(scr15[y * W + x]).toBe(255);
+      }
+    }
+
+    // INV-DG-2: Continuous ramp from 0..255 under 20% dotGain across all tailModes has 0 minDot/minHole violations
+    const ramp = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        ramp[y * W + x] = x < 12 ? 0 : Math.round(((x - 12) / (W - 13)) * 255);
+      }
+    }
+    for (const tailMode of ['hybrid', 'cutoff', 'clamp']) {
+      const res = halftoneCmyk(
+        { C: ramp, M: ramp, Y: ramp, K: ramp },
+        W,
+        H,
+        { meshTpi: 230, ruleOfN: 5.0, dpi: 600, tailMode, dotGain: 20, rosettePreset: 'fta' }
+      );
+      expect(res.screens).toBe(res.plates);
+      for (const ch of ['C', 'M', 'Y', 'K']) {
+        const audit = verifyScreenInvariants(res.screens[ch], W, H, {
+          dMinPx: res.meshSpec.dMinPx,
+          aMinPx: res.meshSpec.aMinPx,
+          cellPitchPx: res.meshSpec.cellPitchPx,
+          srcUint8: ramp,
+        });
+        expect(audit.ok, `dotGain=20 tailMode=${tailMode} screen ${ch}`).toBe(true);
       }
     }
   });

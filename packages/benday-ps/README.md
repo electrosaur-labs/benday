@@ -15,9 +15,9 @@ Adobe Photoshop UXP v5 command plugin for **Electrosaur: Benday** — mesh-aware
 
 ### Option 1: Install Packaged `.ccx` (End Users)
 
-1. Build `packages/benday-ps/benday-v0.1.0.ccx` using `npm run package:ps` from the monorepo root (or download the release `.ccx`).
-2. Double-click `benday-v0.1.0.ccx` to install via the Adobe Creative Cloud Desktop app (on macOS, if double-clicking does not launch the installer, drag the `.ccx` file onto the Creative Cloud Desktop app or Photoshop).
-3. Open a CMYK document in Photoshop and choose **Plugins → Electrosaur: Benday → Benday...**.
+1. Build `packages/benday-ps/benday-v0.2.0.ccx` using `npm run package:ps` from the monorepo root (or download the release `.ccx`).
+2. Double-click `benday-v0.2.0.ccx` to install via the Adobe Creative Cloud Desktop app (on macOS, if double-clicking does not launch the installer, drag the `.ccx` file onto the Creative Cloud Desktop app or Photoshop).
+3. Open a single-layer flattened CMYK document in Photoshop and choose **Plugins → Electrosaur: Benday → Benday...**.
 
 ### Option 2: Load via Adobe UXP Developer Tool (Development & Debugging)
 
@@ -44,7 +44,7 @@ Run from the `benday/` monorepo root:
 # Bundle production UXP plugin into packages/benday-ps/dist/
 npm run build:ps
 
-# Build production bundle and create packages/benday-ps/benday-v0.1.0.ccx
+# Build production bundle and create packages/benday-ps/benday-v0.2.0.ccx
 npm run package:ps
 
 # Run headless DOM (jsdom) + mocked Photoshop bridge unit tests
@@ -70,15 +70,16 @@ npm run clean -w @electrosaur-labs/benday-ps
 
 | File | Responsibility |
 |---|---|
-| `manifest.json` | UXP v5 manifest declaring command entrypoint `benday.showDialog` (`"Benday..."`) for Photoshop `>= 23.3.0`. |
-| `src/index.js` | UXP entrypoint wiring `validateDocument`, pre-modal full-document `readFullCmykChannels`, resizable modal `<dialog>` lifecycle (`1100 × 850`), and post-modal `commitHalftoneLayer`. |
-| `src/state/BendayState.js` | Reactive UI/engine state managing SAATI `(TPI - µm)` presets + custom `(TPI / µm)` mode, `meshAngleDeg`, `ruleOfN` (default `5.0`), `lpiOverride`, `anglesOverride`, tail mode, `previewScale` (`Fit / 50% / 100% / 200%`), `showingOriginal`, live `meshSpec`, and live `moireReport`. |
-| `src/bridge/PhotoshopCmykBridge.js` | Lossless Photoshop CMYK channel bridge: pre-modal CMYK check, **Re-Run Guard** hiding prior `Benday Halftone*` layers (and re-enabling hidden source layers on the temporary duplicate so repeat runs never flatten to white), pure-`batchPlay` duplicate + flatten + `splitChannels`, title-verified channel classification (`_Cyan` / `_Magenta` / `_Yellow` / `_Black` suffix matching), `255 - gray` ink polarity conversion, `8-bit` & `16-bit` (`0 / 32768`) channel writeback, single-undo `suspendHistory("Benday Halftone")` commit onto a top CMYK pixel layer while marking underlying original layer(s) hidden, and 3-gate `finally` cleanup of all temporary split documents. |
-| `src/ui/BendayDialog.js` | Reveal-style two-column DOM controller and `<canvas>` renderer: `Fit` anti-aliased overview, `50% / 100% / 200%` scrollable `16 px`-halo viewport virtualization locked to global document lattice phase, click-drag panning, `< 2 ms` click-to-compare `ORIGINAL` swap, calibrated 8-corner trilinear SWOP Coated overprint LUT, and bottom **Screen Strip** (`Composite + C/M/Y/K` black-on-white film-positive swatches). |
+| `manifest.json` | UXP v5 manifest (`0.2.0`) declaring command entrypoint `benday.showDialog` (`"Benday..."`) for Photoshop `>= 23.3.0`. |
+| `src/index.js` | UXP entrypoint wiring `validateDocument` (single-layer CMYK & Already-Halftoned guards), pre-modal full-document `readFullCmykChannels` + flattened Benday XMP/binary guard (`isFlattenedBendayDocument`), clean default reset on document open & reread, `Save Config` / `Load Config` `-benday.json` file pickers (`uxp.storage.localFileSystem`), resizable modal `<dialog>` lifecycle (`1100 × 850`, including `reopenModalWithoutReread` Escape guard), and post-modal `commitHalftoneLayer`. |
+| `src/state/BendayState.js` | Reactive UI/engine state managing SAATI `(TPI - µm)` presets + custom `(TPI / µm)` mode, `meshAngleDeg`, `ruleOfN` (default `5.0`), `lpiOverride`, `rosettePreset` (`Auto`, `Image-Aware`, `FTA +7.5°`, `ISO Litho`, `Flamenco 45°`, `Manual`), `anglesOverride`, `dotGain` (`0%–20%`), `bvg` (`Crisp Type & Linework`), tail mode, `previewScale` (`Fit / 50% / 100% / 200%`), `showingOriginal`, live `meshSpec`, and live `moireReport`. |
+| `src/bridge/PhotoshopCmykBridge.js` | Lossless Photoshop CMYK channel bridge: pre-modal CMYK check, **Re-Run Guard** hiding prior `Benday Halftone*` layers (and re-enabling hidden source layers on the temporary duplicate so repeat runs never flatten to white), pure-`batchPlay` duplicate + flatten + `splitChannels`, title-verified channel classification (`_Cyan` / `_Magenta` / `_Yellow` / `_Black` suffix matching), `255 - gray` ink polarity conversion, `8-bit` & `16-bit` (`0 / 32768`) channel writeback, single-undo `suspendHistory("Benday Halftone")` commit onto a top CMYK pixel layer with per-layer `generatorSettings` + post-`resumeHistory` document `XMPMetadataAsUTF8` config embedding, and 3-gate `finally` cleanup of all temporary split documents. |
+| `src/ui/BendayDialog.js` | Reveal-style two-column DOM controller and `<canvas>` renderer: `Fit` anti-aliased overview, `50% / 100% / 200%` scrollable `16 px`-halo viewport virtualization locked to global document lattice phase, click-drag panning, `< 2 ms` click-to-toggle **and** `>= 300 ms` hold-to-blink (`400 ms` alternation) `ORIGINAL` comparator, live 16-bit CIELAB `HVS ΔE` & `Gray Steps/Cell` telemetry, calibrated 8-corner trilinear SWOP Coated overprint LUT, and bottom **Screen Strip** (`Composite + C/M/Y/K` black-on-white film-positive swatches). |
+| `src/ui/CreditsController.js` | Theatrical `24 px/sec` crawling **`★ Credits ★`** window (`dist/assets/electrosaur.png` emblem, 5-scene crawl dedicated to **Benjamin Henry Day Jr. (1879)**, clickable 1879 Ben Day Rapid Shading Medium Broadside Easter Egg, and 9 Algorithmic & Optical Legends). |
 
-## Design Note: Why No Tone Curves Inside Benday?
+## Design Note: Why Single-Slider Dot Gain Instead of Multi-Point Tone Curves?
 
-Benday intentionally omits built-in tone/dot-gain curve editors inside the plugin dialog. Photoshop already provides non-destructive **Curves** adjustment layers, per-channel CMYK tone controls, and ICC profile conversion (`Edit → Convert to Profile...`). Keeping curves in native Photoshop adjustment layers underneath your `Benday Halftone` layer keeps your `.psd` workflow transparent and non-destructive while Benday focuses strictly on calibrated halftone linearity and physical screen-mesh constraints.
+Benday intentionally omits multi-point curve editors inside the plugin dialog. Photoshop already provides non-destructive **Curves** adjustment layers, per-channel CMYK tone controls, and ICC profile conversion (`Edit → Convert to Profile...`). Keeping color grading and GCR/UCR in native Photoshop layers underneath your `Benday Halftone` layer keeps your `.psd` workflow transparent, while Benday's single **Extra Press Dot Gain (`0%–20%`)** slider applies a parabolic midtone pullback right before screen generation so your continuous-tone `Original` stays true and un-washed-out on screen.
 
 For press usage, SAATI mesh selection, Rule of N, rosette angles, and tail modes, see the **[Benday User Guide](../../docs/USER-GUIDE.md)**.
 

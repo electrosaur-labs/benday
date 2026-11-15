@@ -10,7 +10,7 @@ Zero-dependency mesh-aware CMYK halftone engine, rosette & 2D harmonic moiré an
 
 - **Input channel polarity (`srcUint8`):** `0` = `0%` paper (no ink), `255` = `100%` solid ink.
 - **Output binary screen polarity:** Strictly `{0, 255}` where `0` = clear/open background (`0%` ink) and `255` = opaque screen dot or solid ink (`100%` ink).
-- **Identifier note:** In screen printing, stencils are **screens** (never "plates"). Where code identifiers use `plates` (such as `result.plates` returned by `halftoneCmyk`) or `verifyPlateInvariants`, that property/function refers to the binary `{0, 255}` screen buffers (`{ C, M, Y, K }`) used to image film positives and burn screens.
+- **Identifier note:** In screen printing, stencils are **screens** (never "plates"). `halftoneCmyk` returns `result.screens` (`{ C, M, Y, K }`) and `PlateVerifier` exports `verifyScreenInvariants` (`ScreenVerifier`); legacy `result.plates` and `verifyPlateInvariants` aliases are preserved for backward compatibility.
 
 ## Quick Example
 
@@ -20,7 +20,8 @@ const {
   computeRosetteAngles,
   analyzeMoire,
   halftoneCmyk,
-  verifyPlateInvariants,
+  verifyScreenInvariants,
+  computeHvsQuality,
 } = require('@electrosaur-labs/benday-core');
 
 const width = 600;
@@ -39,18 +40,22 @@ const result = halftoneCmyk(channels, width, height, {
   ruleOfN: 5.0,
   dpi: 600,
   meshAngleDeg: 0,
+  rosettePreset: 'image-aware',
+  dotGain: 10,
+  bvg: true,
   tailMode: 'hybrid',
 });
 
-// result.plates holds the 4 binary {0, 255} screen buffers: { C, M, Y, K }
-const auditC = verifyPlateInvariants(result.plates.C, width, height, {
+// result.screens holds the 4 binary {0, 255} screen buffers: { C, M, Y, K }
+const auditC = verifyScreenInvariants(result.screens.C, width, height, {
   dMinPx: result.meshSpec.dMinPx,
   aMinPx: result.meshSpec.aMinPx,
   cellPitchPx: result.meshSpec.cellPitchPx,
-  srcUint8: channels.C,
+  srcUint8: result.conditionedChannels.C,
 });
 
-console.log(result.meshSpec.lpiActive, result.moireReport.safe, auditC.ok);
+const hvs = computeHvsQuality(channels, result.screens, width, height, result.meshSpec);
+console.log(result.meshSpec.lpiActive, result.moireReport.safe, auditC.ok, hvs.meanDeltaE);
 ```
 
 ---
@@ -131,6 +136,12 @@ const angles = computeRosetteAngles(0);
 
 Guarantees exact `30.0°` spacing among strong inks (`C`, `K`, `M`), `15.0°` Yellow bisection between `K` and `M`, `15.0°` nominal mesh-thread clearance on all 4 screens, and `>= 13.0°` clearance across `±2.0°` of stretcher slop.
 
+### `ROSETTE_PRESETS`, `assignImageAwareRosetteSlots`, & `resolveRosettePresetAngles`
+
+- `ROSETTE_PRESETS`: Frozen preset table (`auto`, `image-aware`, `fta`, `iso`, `flamenco`, `manual`).
+- `assignImageAwareRosetteSlots(channels, width, height, meshAngleDeg = 0)`: `< 2 ms` strided ($S \le 64 \times 64$) HVS midtone & 2-ink co-occurrence solver permuting `{C, M, Y, K}` across `{θ+15°, θ+45°, θ+60°, θ+75°}` so the highest visual-contrast screen occupies the `45°` Campbell–Kulikowski oblique-effect slot while dominant 2-ink overlaps stay `>= 30°` apart.
+- `resolveRosettePresetAngles(presetId, { meshAngleDeg, channels, width, height, manualAngles })`: Resolves `{ C, M, Y, K }` angles in `[0, 90)` for any preset ID.
+
 ---
 
 ### `analyzeMoire(params)`
@@ -177,6 +188,8 @@ const screenBuf = halftoneChannel(srcUint8, width, height, {
   dpiY: undefined,         // Optional anisotropic vertical DPI (defaults to dpi)
   lpiOverride: null,       // Default: null
   angleDeg: 45,            // Default: 45 (normalized mod 90°)
+  dotGain: 0,              // Extra press dot-gain pullback in [0, 20] % (default: 0)
+  bvg: false,              // Optional Stage B bimodal variance-gated edge snapping (default: false)
   tailMode: 'hybrid',      // 'hybrid' (default) | 'cutoff' | 'clamp'
   channelKey: 'K',         // Deterministic FM tail jitter seed ('C', 'M', 'Y', 'K', or custom string)
   originX: width * 0.5,    // Optional screen lattice X origin in buffer coordinates (locks cropped viewports to global document phase)
@@ -188,44 +201,49 @@ const screenBuf = halftoneChannel(srcUint8, width, height, {
 
 ### `halftoneCmyk(channels, width, height, config)`
 
-Halftones all 4 CMYK continuous-tone channels (`{ C, M, Y, K }`) into binary `{0, 255}` screen buffers using shared mesh physics and bias-centered (or custom) rosette angles.
+Halftones all 4 CMYK continuous-tone channels (`{ C, M, Y, K }`) into binary `{0, 255}` screen buffers using shared mesh physics and bias-centered, preset, or image-aware rosette angles.
 
 ```js
-const { plates, meshSpec, moireReport, angles } = halftoneCmyk(
+const { screens, conditionedChannels, meshSpec, moireReport, angles, rosettePreset } = halftoneCmyk(
   { C, M, Y, K },
   width,
   height,
   {
-    meshTpi: 230,           // Default: 230
-    threadDiaUm: undefined, // Default: catalog auto
-    ruleOfN: 5.0,           // Default: 5.0
-    dpi: 600,               // Default: 600
-    dpiX: undefined,        // Optional anisotropic horizontal DPI (defaults to dpi)
-    dpiY: undefined,        // Optional anisotropic vertical DPI (defaults to dpi)
-    lpiOverride: null,      // Default: null
-    meshAngleDeg: 0,        // Default: 0
-    anglesOverride: null,   // Optional { C, M, Y, K } override in degrees
-    tailMode: 'hybrid',     // 'hybrid' (default) | 'cutoff' | 'clamp'
-    slopDeg: 2.0,           // Default: 2.0
-    originX: width * 0.5,   // Optional screen lattice X origin in buffer coordinates
-    originY: height * 0.5,  // Optional screen lattice Y origin in buffer coordinates
+    meshTpi: 230,            // Default: 230
+    threadDiaUm: undefined,  // Default: catalog auto
+    ruleOfN: 5.0,            // Default: 5.0
+    dpi: 600,                // Default: 600
+    dpiX: undefined,         // Optional anisotropic horizontal DPI (defaults to dpi)
+    dpiY: undefined,         // Optional anisotropic vertical DPI (defaults to dpi)
+    lpiOverride: null,       // Default: null
+    meshAngleDeg: 0,         // Default: 0
+    rosettePreset: 'auto',   // 'auto' | 'image-aware' | 'fta' | 'iso' | 'flamenco' | 'manual'
+    anglesOverride: null,    // Optional { C, M, Y, K } override in degrees
+    dotGain: 0,              // Extra press dot-gain pullback in [0, 20] % (default: 0)
+    bvg: true,               // Stage A Rich-Black UCR + Stage B BVG edge snapping (default: true)
+    tailMode: 'hybrid',      // 'hybrid' (default) | 'cutoff' | 'clamp'
+    slopDeg: 2.0,            // Default: 2.0
+    originX: width * 0.5,    // Optional screen lattice X origin in buffer coordinates
+    originY: height * 0.5,   // Optional screen lattice Y origin in buffer coordinates
   }
 );
 ```
 
-- `plates` (`{ C: Uint8Array, M: Uint8Array, Y: Uint8Array, K: Uint8Array }`): The 4 binary `{0, 255}` screen buffers.
+- `screens` (`{ C: Uint8Array, M: Uint8Array, Y: Uint8Array, K: Uint8Array }`, also aliased as `plates`): The 4 binary `{0, 255}` screen buffers.
+- `conditionedChannels`: Conditioned `{ C, M, Y, K }` source channels after optional `bvg` Rich-Black UCR & edge snapping (equals input channels when `bvg: false`).
 - `meshSpec`: Full `computeMeshSpec` output.
 - `moireReport`: Full `analyzeMoire` output.
 - `angles`: Normalized `{ C, M, Y, K }` screen angles in `[0, 90)`.
+- `rosettePreset`: Active preset identifier.
 
 ---
 
-### `verifyPlateInvariants(plateUint8, width, height, spec)`
+### `verifyScreenInvariants(screenUint8, width, height, spec)` *(aliased as `verifyPlateInvariants`)*
 
 Independent mathematical and morphological auditor verifying that a binary screen buffer satisfies all physical press invariants (using an independent `openByCanonicalDisk` oracle sharing zero morphological code with `HalftoneEngine`).
 
 ```js
-const audit = verifyPlateInvariants(screenUint8, width, height, {
+const audit = verifyScreenInvariants(screenUint8, width, height, {
   dMinPx: meshSpec.dMinPx,             // Required (defaults to 1 if omitted)
   dMinPxX: meshSpec.dMinPxX,           // Optional anisotropic X min dot diameter in px
   dMinPxY: meshSpec.dMinPxY,           // Optional anisotropic Y min dot diameter in px
@@ -246,7 +264,7 @@ const audit = verifyPlateInvariants(screenUint8, width, height, {
 | `minDotViolations` | `number` | Count of foreground (`255`) pixels not 8-connected to `src === 255` solids that are not covered by at least one full canonical disk $B_{D_{\min}}$ |
 | `minHoleViolations` | `number` | Count of enclosed interior `0`-pixels (excluding exterior paper and pure `{0, 255}` graphic counters bounded strictly by `src === 255` solids) not covered by at least one full canonical disk $B_{D_{\min}}$ |
 | `solidPreservationViolations` | `number` | Count of pixels where `srcUint8[p] === 255` and `plateUint8[p] !== 255` |
-| `paperBleedViolations` | `number` | On pure `{0, 255}` inputs: pixels where `src === 0 && plate !== 0`. On continuous-tone inputs: foreground pixels straying outside the `(max(2*dMinPxX, ceil(cellPitchPxX)), max(2*dMinPxY, ceil(cellPitchPxY)))` Chebyshev neighborhood of `src > 0`, or foreground 8-connected components with zero overlap against `src > 0` |
+| `paperBleedViolations` | `number` | On pure `{0, 255}` inputs: pixels where `srcUint8[p] === 0 && plateUint8[p] !== 0`. On continuous-tone inputs: foreground pixels straying outside the `(max(2*dMinPxX, ceil(cellPitchPxX)), max(2*dMinPxY, ceil(cellPitchPxY)))` Chebyshev neighborhood of `src > 0`, or foreground 8-connected components with zero overlap against `src > 0` |
 | `dMinPx`, `dMinPxX`, `dMinPxY` | `number` | Audited minimum dot diameters in pixels |
 | `cellPitchPx`, `cellPitchPxX`, `cellPitchPxY` | `number` | Audited halftone cell pitches in pixels |
 | `inkPixels`, `inkCoverage` | `number` | Total `255` pixel count and fractional coverage in `[0, 1]` |
@@ -254,8 +272,12 @@ const audit = verifyPlateInvariants(screenUint8, width, height, {
 
 ---
 
-## Additional Exported Utilities & Constants
+## v0.2 Modules & Utilities
 
+- **`applyDotGainPullback(t, dotGain)` (`HalftoneEngine`):** Parabolic midtone pullback $t_{\text{film}} = t - 4 \Delta G \, t(1-t)$ ($\Delta G \in [0, 0.20]$) with exact `0.0` and `1.0` fixed points.
+- **`snapChannelEdges(srcUint8, width, height)` & `snapCmykEdges(channels, width, height, options)` (`BvgEdgeSnapper`):** Zero-dependency 2-stage Bimodal Variance-Gated pre-conditioner (`5×5` exact Otsu $\eta \ge 0.82$, $\Delta I \ge 128$, `1 px` hairline & enclosed letter-counter guards, plus 2-pass 3–4 Chamfer Distance narrow Rich-Black UCR for strokes narrower than `2 * cellPitchPx`).
+- **`PRESS_CONFIG_SCHEMA_VERSION`, `serializePressConfig`, `parsePressConfig`, `embedPressConfigInXmp`, `extractPressConfigFromXmp` (`PressConfig`):** Portable `-benday.json` (`schemaVersion: "0.2.0"`) serializer/validator and Photoshop XMP `<!-- BENDAY:BEGIN -->...<!-- BENDAY:END -->` round-trip helpers.
+- **`computeHvsQuality(origChannels, screenChannels, width, height, meshSpec)` & `computeGrayStepsPerCell(meshSpec)` (`HvsQuality`):** Evaluates viewing-distance perceptual `ΔE76` (`{ meanDeltaE, p95DeltaE, maxDeltaE, grayStepsPerCell, sigmaPx }`) by convolving SWOP Coated linear D50 `XYZ` photon fields with a separable Gaussian HVS PSF ($\sigma = \operatorname{clamp}(1.5 \cdot \text{cellPitchPx}, 0.75, 16.0)$) and converting into canonical **16-bit Engine CIELAB** (`L: 0..32768`, `a/b: 0..32768`, `16384` neutral).
 - `SAATI_MESH_PRESETS`: Frozen 20-entry catalog of official SAATI screen-printing `(TPI, µm)` rolls (`110-80` through `420-27`, including standard and `Hi-R` high-open-area thin-thread pairs with `{ id, tpi, threadUm, hiR, openAreaPct, label }`).
 - `STANDARD_THREAD_UM`: Frozen lookup `{ 110: 80, 156: 64, 196: 55, 200: 55, 230: 48, 280: 40, 305: 34, 355: 34, 380: 31, 420: 27 }`.
 - `STANDARD_MESH_TPI`: Frozen sorted array `[110, 156, 196, 200, 230, 280, 305, 355, 380, 420]`.
@@ -264,7 +286,7 @@ const audit = verifyPlateInvariants(screenUint8, width, height, {
 - `norm90(deg)` / `clearance90(aDeg, bDeg)` / `besselJ1(x)`.
 - `EUCLIDEAN_LUT` / `clippedDiamondArea(r)` / `radiusForDiamondTone(t)`.
 - `getChannelCalibrationLut(meshSpec, angleDeg)` (via `HalftoneEngine`): Cached 256-entry 1D empirical discrete tone calibration LUT ensuring angle-neutral dot coverage and smooth midtone bridging.
-- Submodule namespaces: `MeshPhysics`, `RosetteAngles`, `EuclideanLut`, `HalftoneEngine`, `PlateVerifier` (also exported as `HalftoneVerifier`).
+- Submodule namespaces: `MeshPhysics`, `RosetteAngles`, `EuclideanLut`, `HalftoneEngine`, `BvgEdgeSnapper`, `PressConfig`, `HvsQuality`, `ScreenVerifier` (also exported as `PlateVerifier` and `HalftoneVerifier`).
 
 ## License
 
