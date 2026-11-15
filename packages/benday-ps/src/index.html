@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Electrosaur: Benday</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <dialog id="bendayDialog">
+    <div id="benday-dialog-root">
+      <!-- Left Column: Header + Aspect-Preserving / Scrollable Halftone Preview + Screen Swatch Bar -->
+      <div id="main-panel">
+        <div id="doc-header">
+          <span id="benday-doc-title">Untitled.psd — 2400×3000 @ 600 DPI</span>
+          <span class="stat-sep">&middot;</span>
+          <span id="stat-mesh-lpi">230 TPI &middot; 46.0 LPI</span>
+          <span class="stat-sep">&middot;</span>
+          <span id="stat-min-dot">D_min 5 px</span>
+          <span class="stat-sep">&middot;</span>
+          <span id="moire-status-badge" class="badge-safe">ROSETTE SAFE</span>
+          <span id="benday-preview-status">Ready</span>
+          <span style="flex: 1;"></span>
+
+          <!-- Legacy Loupe control kept hidden for backward-compatible unit tests -->
+          <div class="loupe-header-group">
+            <span class="loupe-label">Loupe</span>
+            <select id="loupe-zoom" title="Pixel-accurate halftone magnifier">
+              <option value="0" selected>None</option>
+              <option value="1">1:1</option>
+              <option value="2">1:2</option>
+              <option value="4">1:4</option>
+            </select>
+          </div>
+
+          <div class="zoom-header-group">
+            <button type="button" id="btn-zoom-out" class="zoom-step-btn" title="Zoom out (Cmd -)">&minus;</button>
+            <select id="preview-zoom" title="Preview magnification">
+              <option value="fit" selected>Fit</option>
+              <option value="0.5">50%</option>
+              <option value="1">100%</option>
+              <option value="2">200%</option>
+            </select>
+            <button type="button" id="btn-zoom-in" class="zoom-step-btn" title="Zoom in (Cmd +)">+</button>
+          </div>
+
+          <button type="button" class="knob-help-btn" id="btn-help-toggle" title="Toggle parameter help">?</button>
+        </div>
+
+        <div id="preview-stage">
+          <div id="preview-container">
+            <div id="preview-scroll-sizer">
+              <img id="preview-img" alt="Halftone Preview" />
+            </div>
+            <div id="preview-placeholder">Loading CMYK channels…</div>
+            <div id="loupe-container">
+              <img id="loupe-img" alt="1:1 Halftone Loupe" />
+              <span id="loupe-mode-pill">1:1 &middot; 46.0 LPI</span>
+              <span id="loupe-coords">0, 0</span>
+            </div>
+          </div>
+          <div id="original-badge">ORIGINAL</div>
+        </div>
+
+        <div id="screen-strip">
+          <div class="screen-strip-header">
+            <span class="screen-strip-title">SCREENS</span>
+            <span class="screen-strip-hint">Click screen to solo film positive &middot; Click image to compare Original &middot; Drag to pan when zoomed</span>
+          </div>
+          <div class="screen-swatch-row">
+            <button type="button" class="screen-swatch is-active" data-preview-mode="composite">
+              <span class="swatch-chip swatch-chip-cmyk">
+                <span style="background: #00aeef;"></span>
+                <span style="background: #ec008c;"></span>
+                <span style="background: #fff200;"></span>
+                <span style="background: #141414;"></span>
+              </span>
+              <span class="swatch-text">
+                <span class="swatch-name">CMYK Proof</span>
+                <span class="swatch-meta" id="swatch-meta-composite">4 screens</span>
+              </span>
+            </button>
+
+            <button type="button" class="screen-swatch" data-preview-mode="C">
+              <span class="swatch-chip" style="background: #00aeef;"></span>
+              <span class="swatch-text">
+                <span class="swatch-name">Cyan</span>
+                <span class="swatch-meta" id="swatch-meta-C">15° &middot; --%</span>
+              </span>
+            </button>
+
+            <button type="button" class="screen-swatch" data-preview-mode="M">
+              <span class="swatch-chip" style="background: #ec008c;"></span>
+              <span class="swatch-text">
+                <span class="swatch-name">Magenta</span>
+                <span class="swatch-meta" id="swatch-meta-M">75° &middot; --%</span>
+              </span>
+            </button>
+
+            <button type="button" class="screen-swatch" data-preview-mode="Y">
+              <span class="swatch-chip" style="background: #fff200;"></span>
+              <span class="swatch-text">
+                <span class="swatch-name">Yellow</span>
+                <span class="swatch-meta" id="swatch-meta-Y">0° &middot; --%</span>
+              </span>
+            </button>
+
+            <button type="button" class="screen-swatch" data-preview-mode="K">
+              <span class="swatch-chip" style="background: #141414;"></span>
+              <span class="swatch-text">
+                <span class="swatch-name">Black</span>
+                <span class="swatch-meta" id="swatch-meta-K">45° &middot; --%</span>
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Action Buttons + Screen Mesh & Halftone Physics Controls -->
+      <div id="hud-panel">
+        <div id="knobs-header">
+          <button id="btn-reread" class="top-action-btn" title="Re-read continuous-tone CMYK channels from Photoshop">Reread Document</button>
+          <button id="btn-reset-top" class="top-action-btn" disabled title="Reset all Benday parameters to factory defaults">Reset to Defaults</button>
+          <button id="btn-benday-apply" class="top-action-btn">Apply Halftone</button>
+        </div>
+
+        <div id="knobs-scroll">
+          <!-- SCREEN MESH -->
+          <div class="knob-section">
+            <div class="group-header">
+              <span>SCREEN MESH</span>
+            </div>
+
+            <div class="knob-row">
+              <span class="knob-label">Screen Mesh (TPI &ndash; &micro;m)</span>
+              <button id="btn-mesh-revert" type="button" class="knob-revert" title="Reset Screen Mesh to 230-48">&#x21BA;</button>
+            </div>
+            <div class="mesh-picker-row">
+              <select id="input-mesh-preset" title="Official SAATI screen mesh count and thread diameter">
+                <option value="110-80">110-80 (43% open)</option>
+                <option value="110-70">110-70 (49% open · Hi-R)</option>
+                <option value="156-64">156-64 (37% open)</option>
+                <option value="156-48">156-48 (50% open · Hi-R)</option>
+                <option value="196-55">196-55 (33% open)</option>
+                <option value="196-48">196-48 (40% open · Hi-R)</option>
+                <option value="230-48" selected>230-48 (32% open)</option>
+                <option value="230-40">230-40 (41% open · Hi-R)</option>
+                <option value="280-40">280-40 (31% open)</option>
+                <option value="280-34">280-34 (39% open · Hi-R)</option>
+                <option value="280-31">280-31 (43% open · Hi-R)</option>
+                <option value="305-40">305-40 (27% open)</option>
+                <option value="305-34">305-34 (35% open)</option>
+                <option value="305-31">305-31 (39% open · Hi-R)</option>
+                <option value="355-34">355-34 (28% open)</option>
+                <option value="355-31">355-31 (32% open · Hi-R)</option>
+                <option value="380-34">380-34 (24% open)</option>
+                <option value="380-31">380-31 (29% open · Hi-R)</option>
+                <option value="420-31">420-31 (24% open)</option>
+                <option value="420-27">420-27 (31% open · Hi-R)</option>
+                <option value="custom">Custom (TPI / µm)…</option>
+              </select>
+            </div>
+            <div id="custom-mesh-row" style="display: none;">
+              <div class="custom-mesh-field">
+                <label for="input-mesh-tpi">TPI</label>
+                <input id="input-mesh-tpi" class="mesh-tpi-num" type="number" min="40" max="600" step="1" value="230" title="Exact mesh count in threads per inch" />
+              </div>
+              <div class="custom-mesh-field">
+                <label for="input-thread-um">Thread µm</label>
+                <input id="input-thread-um" class="mesh-tpi-num" type="number" min="20" max="120" step="1" value="48" title="Physical filament diameter in microns" />
+              </div>
+            </div>
+            <div class="knob-help">Paired mesh count (threads/inch) and filament diameter (microns). Hi-R thin-thread rolls deliver wider open area for finer LPI rulings and cleaner highlights.</div>
+
+            <div class="knob-row">
+              <span class="knob-label">Mesh Bias Angle</span>
+              <span class="knob-right">
+                <input id="input-mesh-angle-num" class="knob-inline-num" type="number" min="0" max="89.5" step="0.5" value="0" />
+                <span class="knob-unit">°</span>
+                <button id="btn-mesh-angle-revert" type="button" class="knob-revert" title="Reset Mesh Bias Angle to 0°">&#x21BA;</button>
+              </span>
+            </div>
+            <sp-slider id="input-mesh-angle-slider" min="0" max="89.5" step="0.5" value="0" variant="filled"></sp-slider>
+            <div class="knob-help">Rotation of mesh threads on the frame (0° standard stretch, or biased stretch). Automatically shifts all 4 CMYK rosette angles to avoid mesh moiré.</div>
+          </div>
+
+          <!-- APERTURE & RULING -->
+          <div class="knob-section">
+            <div class="group-header">
+              <span>APERTURE &amp; RULING</span>
+            </div>
+
+            <div class="knob-row">
+              <span class="knob-label">Rule of N</span>
+              <span class="knob-right">
+                <span id="readout-rule-n" class="knob-val">N = 5.0 &middot; 5 px</span>
+                <button id="btn-rule-n-revert" type="button" class="knob-revert" title="Reset Rule of N to 5.0">&#x21BA;</button>
+              </span>
+            </div>
+            <sp-slider id="input-rule-n-slider" min="2" max="10" step="0.5" value="5" variant="filled"></sp-slider>
+            <div class="knob-help">Mesh threads per halftone cell (LPI = Mesh TPI / N, scaled by open area; default N = 5.0). Higher N yields coarser LPI and sturdier stencil washout.</div>
+
+            <div class="knob-row">
+              <span class="knob-label">Screen Ruling (LPI)</span>
+              <span class="knob-right">
+                <span id="readout-lpi-hint" class="knob-sub">Auto: 46.0 LPI</span>
+                <button id="btn-lpi-auto" type="button" class="knob-revert" title="Reset LPI to natural mesh ruling">&#x21BA;</button>
+              </span>
+            </div>
+            <input id="input-lpi-override" class="knob-full-input" type="number" min="5" max="200" step="0.5" placeholder="46.0 (Auto)" />
+            <div class="knob-help">Lines per inch. Leave blank for natural Rule-of-N ruling, or enter a custom LPI within your mesh and DPI aperture limit.</div>
+          </div>
+
+          <!-- TAIL MODE -->
+          <div class="knob-section">
+            <div class="group-header">
+              <span>TAIL MODE</span>
+              <button id="btn-tail-revert" type="button" class="knob-revert" title="Reset Tail Mode to Hybrid">&#x21BA;</button>
+            </div>
+            <div class="tail-chip-row">
+              <span class="filter-chip active is-active" data-tail-mode="hybrid">Hybrid AM+FM</span>
+              <span class="filter-chip" data-tail-mode="cutoff">Crisp Cutoff</span>
+              <span class="filter-chip" data-tail-mode="clamp">Clamp Dot</span>
+            </div>
+            <div class="knob-help">Controls tones finer than your mesh's minimum dot: Hybrid diffuses sparse printable stipple dots, Cutoff clips cleanly to paper/solid, Clamp holds minimum dots.</div>
+          </div>
+
+          <!-- ROSETTE ANGLES & MOIRÉ -->
+          <div class="knob-section">
+            <div class="group-header">
+              <span>ROSETTE ANGLES &amp; MOIRÉ</span>
+              <button id="btn-angles-auto" type="button" class="knob-revert" title="Reset C/M/Y/K angles to optimal moiré-free rosette">&#x21BA; Auto</button>
+            </div>
+            <div class="angles-grid">
+              <div class="angle-cell">
+                <label for="input-angle-c"><span class="angle-dot" style="background: #00aeef;"></span>C°</label>
+                <input id="input-angle-c" type="number" min="0" max="89.9" step="0.5" value="15" />
+              </div>
+              <div class="angle-cell">
+                <label for="input-angle-m"><span class="angle-dot" style="background: #ec008c;"></span>M°</label>
+                <input id="input-angle-m" type="number" min="0" max="89.9" step="0.5" value="75" />
+              </div>
+              <div class="angle-cell">
+                <label for="input-angle-y"><span class="angle-dot" style="background: #fff200;"></span>Y°</label>
+                <input id="input-angle-y" type="number" min="0" max="89.9" step="0.5" value="0" />
+              </div>
+              <div class="angle-cell">
+                <label for="input-angle-k"><span class="angle-dot" style="background: #666;"></span>K°</label>
+                <input id="input-angle-k" type="number" min="0" max="89.9" step="0.5" value="45" />
+              </div>
+            </div>
+            <div id="moire-status-detail">Min thread clearance: 15.0° (±2.0° slop)</div>
+            <div class="knob-help">Classical 30° CMK rosette + 15° Yellow offset rotated against mesh threads. Warns immediately if any screen risks harmonic beat patterns on mesh.</div>
+          </div>
+
+          <!-- PRESS PHYSICS TELEMETRY -->
+          <div class="telemetry-card">
+            <div class="group-header">
+              <span>PRESS PHYSICS TELEMETRY</span>
+            </div>
+            <div class="telemetry-row">
+              <span class="telemetry-key">Mesh Open Area</span>
+              <span class="telemetry-val" id="phys-open-area">32.0% (1.00× d_min)</span>
+            </div>
+            <div class="telemetry-row">
+              <span class="telemetry-key">Minimum Aperture</span>
+              <span class="telemetry-val" id="phys-min-dot">5 px &middot; 216 µm</span>
+            </div>
+            <div class="telemetry-row">
+              <span class="telemetry-key">Pure AM Window</span>
+              <span class="telemetry-val" id="phys-am-range">12% – 88% AM</span>
+            </div>
+            <div id="benday-warnings-box" style="display: none;"></div>
+            <div id="benday-error-banner" style="display: none;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </dialog>
+  <script src="index.js"></script>
+</body>
+</html>

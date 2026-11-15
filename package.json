@@ -1,0 +1,32 @@
+{
+  "name": "benday",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electrosaur: Benday monorepo — Mesh-aware CMYK halftone RIP for screen printing",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "npm run test --workspaces",
+    "test:core": "npm test -w @electrosaur-labs/benday-core",
+    "test:ps": "npm test -w @electrosaur-labs/benday-ps",
+    "test:cli": "npm test -w @electrosaur-labs/benday-cli",
+    "build": "npm run build --workspaces --if-present",
+    "build:ps": "npm run build -w @electrosaur-labs/benday-ps",
+    "package:ps": "npm run package -w @electrosaur-labs/benday-ps",
+    "benday": "node packages/benday-cli/bin/benday.js",
+    "clean": "npm run clean --workspaces --if-present"
+  },
+  "keywords": [
+    "screen-printing",
+    "halftone",
+    "cmyk",
+    "rosette",
+    "mesh-physics",
+    "photoshop",
+    "uxp",
+    "electrosaur"
+  ],
+  "author": "Electrosaur Labs",
+  "license": "Apache-2.0"
+}

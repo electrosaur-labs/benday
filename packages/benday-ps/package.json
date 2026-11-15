@@ -1,0 +1,35 @@
+{
+  "name": "@electrosaur-labs/benday-ps",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electrosaur: Benday — Photoshop UXP CMYK mesh-aware halftone plugin",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "webpack --mode production && node scripts/copy-assets.js",
+    "build:dev": "webpack --mode development && node scripts/copy-assets.js",
+    "watch": "webpack --mode development --watch",
+    "clean": "rm -rf dist",
+    "package": "npm run build && node scripts/package.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@electrosaur-labs/benday-core": "*"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1",
+    "vitest": "^1.6.1",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.4"
+  },
+  "keywords": [
+    "photoshop",
+    "uxp",
+    "screen-printing",
+    "halftone",
+    "cmyk",
+    "benday"
+  ],
+  "author": "Electrosaur Labs",
+  "license": "Apache-2.0"
+}

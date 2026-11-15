@@ -1,0 +1,814 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: #323232;
+  color: #e0e0e0;
+  font-family: adobe-clean, 'Adobe Clean', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 12px;
+  overflow: hidden;
+  user-select: none;
+}
+
+#bendayDialog {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: #323232;
+  color: #e0e0e0;
+  overflow: hidden;
+}
+
+/* ─── Two-Column Root (Matches Reveal Navigator) ─── */
+#benday-dialog-root {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: row;
+  background: #323232;
+  color: #e0e0e0;
+  font-family: adobe-clean, 'Adobe Clean', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 12px;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* ─── Left Column: Document Header + Preview + Screen Strip ─── */
+#main-panel {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  gap: 6px;
+  min-width: 0;
+  min-height: 0;
+}
+
+#doc-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid #444;
+  font-size: 11px;
+  color: #999;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+#benday-doc-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #ccc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 340px;
+}
+
+.stat-sep {
+  color: #555;
+}
+
+#stat-mesh-lpi {
+  color: #8bb8e8;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+#stat-min-dot {
+  color: #e0c97f;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+#moire-status-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 9px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+#moire-status-badge.badge-safe {
+  color: #5cd65c;
+  background: rgba(92, 214, 92, 0.12);
+  border-color: rgba(92, 214, 92, 0.4);
+}
+
+#moire-status-badge.badge-warn {
+  color: #e0c97f;
+  background: rgba(224, 201, 127, 0.14);
+  border-color: rgba(224, 201, 127, 0.45);
+}
+
+#moire-status-badge.badge-danger {
+  color: #e07f7f;
+  background: rgba(224, 127, 127, 0.16);
+  border-color: rgba(224, 127, 127, 0.5);
+}
+
+#benday-preview-status {
+  color: #888;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+/* Legacy Loupe hidden in live UI */
+.loupe-header-group,
+#loupe-container {
+  display: none !important;
+}
+
+/* ─── Header Zoom Control Group ─── */
+.zoom-header-group {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.zoom-step-btn {
+  background: #383838;
+  border: 1px solid #555;
+  color: #ddd;
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.zoom-step-btn:hover:not(:disabled) {
+  background: #444;
+  border-color: #777;
+  color: #fff;
+}
+
+.zoom-step-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+#preview-zoom {
+  background: #383838;
+  border: 1px solid #555;
+  color: #ddd;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#preview-zoom:focus {
+  border-color: #4da6ff;
+  outline: none;
+}
+
+/* ─── Preview Stage & Scrollable Viewport ─── */
+#preview-stage {
+  flex: 1 1 0;
+  min-height: 0;
+  position: relative;
+  display: flex;
+}
+
+#preview-container {
+  flex: 1 1 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: #1e1e1e;
+  border: 1px solid #444;
+  border-radius: 3px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+#preview-container.is-zoomed {
+  display: block;
+  overflow: auto;
+  cursor: grab;
+}
+
+#preview-container.is-zoomed.is-panning {
+  cursor: grabbing;
+}
+
+#preview-scroll-sizer {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+#preview-container.is-zoomed #preview-scroll-sizer {
+  display: block;
+  margin: 0 auto;
+}
+
+#preview-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: auto;
+  display: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+#preview-img.visible {
+  display: block;
+}
+
+#preview-container.is-zoomed #preview-img {
+  position: absolute;
+  object-fit: fill;
+  image-rendering: pixelated;
+}
+
+#preview-placeholder {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #888;
+  font-size: 12px;
+  letter-spacing: 0.4px;
+  text-align: center;
+  padding: 16px;
+  pointer-events: none;
+}
+
+#original-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #e0a030;
+  background: rgba(0, 0, 0, 0.76);
+  border: 1px solid rgba(224, 160, 48, 0.5);
+  padding: 2px 7px;
+  border-radius: 3px;
+  pointer-events: none;
+  z-index: 15;
+  display: none;
+}
+
+#original-badge.visible {
+  display: block;
+}
+
+/* ─── Bottom Screen Strip (Matches Reveal Palette Surgeon) ─── */
+#screen-strip {
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  border-radius: 3px;
+  padding: 6px 8px;
+  flex-shrink: 0;
+}
+
+.screen-strip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 5px;
+  gap: 8px;
+}
+
+.screen-strip-title {
+  color: #aaa;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.screen-strip-hint {
+  color: #888;
+  font-size: 10px;
+}
+
+.screen-swatch-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.screen-swatch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: #333;
+  border: 1px solid #484848;
+  border-radius: 3px;
+  color: #ddd;
+  font-size: 11px;
+  cursor: pointer;
+  flex: 1 1 auto;
+  min-width: 96px;
+}
+
+.screen-swatch:hover {
+  background: #3a3a3a;
+  border-color: #777;
+}
+
+.screen-swatch.is-active {
+  background: #2d3545;
+  border-color: #4da6ff;
+  color: #fff;
+}
+
+.swatch-chip {
+  width: 18px;
+  height: 18px;
+  border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.swatch-chip-cmyk {
+  display: flex;
+  flex-wrap: wrap;
+  overflow: hidden;
+  padding: 0;
+}
+
+.swatch-chip-cmyk span {
+  width: 50%;
+  height: 50%;
+  display: block;
+}
+
+.swatch-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.2;
+}
+
+.swatch-name {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.swatch-meta {
+  font-size: 9px;
+  color: #9aa4b2;
+}
+
+/* ─── Right Column: Mechanical & Halftone Physics Knobs ─── */
+#hud-panel {
+  flex: 0 0 320px;
+  width: 320px;
+  background: #2a2a2a;
+  border-left: 1px solid #444;
+  display: flex;
+  flex-direction: column;
+  padding: 0 8px 8px 8px;
+  overflow: hidden;
+  min-height: 0;
+}
+
+#knobs-header {
+  flex: 0 0 auto;
+  padding: 8px 0 4px 0;
+  border-bottom: 1px solid #3a3a3a;
+}
+
+.top-action-btn {
+  width: 100%;
+  height: 32px;
+  margin: 0 0 6px 0;
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  -webkit-appearance: none;
+  appearance: none;
+  outline: none;
+}
+
+.top-action-btn:last-child {
+  margin-bottom: 4px;
+}
+
+.top-action-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+#btn-reread {
+  background: #1a2a3a;
+  border: 1px solid #3070a0;
+  color: #60b0ff;
+}
+
+#btn-reread:hover:not(:disabled) {
+  background: #203848;
+  border: 1px solid #4090c0;
+}
+
+#btn-reset-top {
+  background: #3a3020;
+  border: 1px solid #7a6530;
+  color: #e0a030;
+}
+
+#btn-reset-top:hover:not(:disabled) {
+  background: #4a3a28;
+  border: 1px solid #a08040;
+}
+
+#btn-benday-apply {
+  background: #1a3a2a;
+  border: 1px solid #307050;
+  color: #60c090;
+}
+
+#btn-benday-apply:hover:not(:disabled) {
+  background: #204838;
+  border: 1px solid #409060;
+  color: #fff;
+}
+
+/* ─── Scrollable Knobs Area ─── */
+#knobs-scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.knob-section {
+  background: #2f2f2f;
+  border: 1px solid #3c3c3c;
+  border-radius: 3px;
+  padding: 7px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  font-weight: 700;
+  color: #aaa;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-bottom: 1px;
+}
+
+.knob-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #ccc;
+  gap: 6px;
+}
+
+.knob-label {
+  color: #e0e0e0;
+  font-size: 11px;
+}
+
+.knob-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.knob-val {
+  color: #ccc;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.knob-sub {
+  color: #9aa4b2;
+  font-size: 10px;
+}
+
+.knob-unit {
+  color: #999;
+  font-size: 10px;
+}
+
+.knob-revert {
+  display: none;
+  background: none;
+  border: none;
+  color: #f0a030;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0 3px;
+  line-height: 1;
+}
+
+.knob-revert.is-locked,
+.knob-revert.visible {
+  display: inline-block;
+}
+
+.knob-revert:hover {
+  color: #ffc060;
+}
+
+sp-slider {
+  width: 100%;
+  margin: 0 0 2px 0;
+  --spectrum-slider-track-color: #555;
+  --spectrum-slider-fill-track-color: #4da6ff;
+}
+
+.mesh-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mesh-picker-row select,
+.knob-inline-num,
+.knob-full-input,
+.angle-cell input {
+  background: #383838;
+  color: #e0e0e0;
+  border: 1px solid #555;
+  border-radius: 3px;
+  padding: 3px 5px;
+  font-size: 11px;
+}
+
+.mesh-picker-row select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Custom (TPI / µm) inline row toggled via direct .visible class */
+#custom-mesh-row {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+#custom-mesh-row.visible {
+  display: flex;
+}
+
+.custom-mesh-field {
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  font-size: 10px;
+  color: #aaa;
+}
+
+.mesh-tpi-num {
+  width: 68px;
+  text-align: right;
+  background: #383838;
+  color: #e0e0e0;
+  border: 1px solid #555;
+  border-radius: 3px;
+  padding: 3px 5px;
+  font-size: 11px;
+}
+
+.knob-inline-num {
+  width: 58px;
+  text-align: right;
+}
+
+.knob-full-input {
+  width: 100%;
+}
+
+.mesh-picker-row select:focus,
+.mesh-tpi-num:focus,
+.knob-inline-num:focus,
+.knob-full-input:focus,
+.angle-cell input:focus {
+  border-color: #4da6ff;
+  outline: none;
+}
+
+/* ─── Tail Mode Filter Chips (Matches Reveal) ─── */
+.tail-chip-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.filter-chip {
+  display: inline-block;
+  padding: 3px 10px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #aaa;
+  background: #383838;
+  border: 1px solid #555;
+  border-radius: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.filter-chip:hover {
+  color: #ddd;
+  border-color: #777;
+  background: #444;
+}
+
+.filter-chip.active,
+.filter-chip.is-active {
+  color: #fff;
+  background: #3a5a8a;
+  border-color: #4da6ff;
+}
+
+/* ─── 4-Up Rosette Angle Grid ─── */
+.angles-grid {
+  display: flex;
+  gap: 5px;
+}
+
+.angle-cell {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.angle-cell label {
+  font-size: 9px;
+  font-weight: 700;
+  color: #aaa;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.angle-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.angle-cell input {
+  width: 100%;
+  text-align: right;
+}
+
+#moire-status-detail {
+  font-size: 10px;
+  color: #9aa4b2;
+  line-height: 1.35;
+}
+
+/* ─── Telemetry Card & Alerts (Toggled via direct .visible class for UXP repaint reliability) ─── */
+.telemetry-card {
+  background: #252525;
+  border: 1px solid #3a3a3a;
+  border-radius: 3px;
+  padding: 7px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.telemetry-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 10px;
+  gap: 6px;
+}
+
+.telemetry-key {
+  color: #888;
+}
+
+.telemetry-val {
+  color: #ccc;
+  font-weight: 600;
+  text-align: right;
+}
+
+#benday-warnings-box {
+  display: none;
+  margin-top: 3px;
+  padding: 5px 7px;
+  border-radius: 3px;
+  font-size: 10px;
+  color: #f0d080;
+  background: rgba(224, 160, 48, 0.14);
+  border: 1px solid rgba(224, 160, 48, 0.45);
+  line-height: 1.35;
+}
+
+#benday-warnings-box.visible {
+  display: block;
+}
+
+#benday-error-banner {
+  display: none;
+  margin-top: 3px;
+  padding: 6px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #ffb3b3;
+  background: rgba(200, 50, 50, 0.22);
+  border: 1px solid rgba(224, 90, 90, 0.65);
+  line-height: 1.35;
+}
+
+#benday-error-banner.visible {
+  display: block;
+}
+
+/* ─── Parameter Help Toggle System (Direct .visible class on each .knob-help) ─── */
+.knob-help-btn {
+  background: none;
+  border: 1px solid #555;
+  border-radius: 50%;
+  color: #aaa;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+  line-height: 16px;
+  text-align: center;
+  padding: 0;
+}
+
+.knob-help-btn:hover,
+.knob-help-btn.active {
+  color: #fff;
+  border-color: #4da6ff;
+  background: #2d425c;
+}
+
+.knob-help {
+  display: none;
+  font-size: 11px;
+  color: #1a1a1a;
+  background: #fff3b0;
+  border: 1px solid #e0c860;
+  border-radius: 3px;
+  padding: 5px 7px;
+  line-height: 1.4;
+}
+
+.knob-help.visible {
+  display: block;
+}

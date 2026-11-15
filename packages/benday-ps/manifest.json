@@ -1,0 +1,26 @@
+{
+  "id": "org.electrosaur.benday",
+  "name": "Electrosaur: Benday",
+  "version": "0.1.0",
+  "main": "index.html",
+  "host": {
+    "app": "PS",
+    "minVersion": "23.3.0",
+    "data": {
+      "apiVersion": 2
+    }
+  },
+  "manifestVersion": 5,
+  "entrypoints": [
+    {
+      "type": "command",
+      "id": "benday.showDialog",
+      "label": {
+        "default": "Benday..."
+      }
+    }
+  ],
+  "requiredPermissions": {
+    "localFileSystem": "fullAccess"
+  }
+}

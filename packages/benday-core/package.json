@@ -1,0 +1,33 @@
+{
+  "name": "@electrosaur-labs/benday-core",
+  "version": "0.1.0",
+  "description": "Zero-dependency mesh-aware CMYK halftone engine and screen physics for screen printing",
+  "main": "index.js",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "screen-printing",
+    "halftone",
+    "cmyk",
+    "rosette",
+    "moire",
+    "euclidean-screen",
+    "mesh-physics"
+  ],
+  "author": "Electrosaur Labs",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "files": [
+    "index.js",
+    "lib/",
+    "README.md",
+    "LICENSE"
+  ],
+  "devDependencies": {
+    "vitest": "^1.6.1"
+  }
+}

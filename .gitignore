@@ -1,0 +1,7 @@
+node_modules/
+dist/
+coverage/
+*.ccx
+.DS_Store
+.idea/
+tmp/
