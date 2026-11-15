@@ -483,4 +483,17 @@ Independent line-by-line commit-gate re-audit completed across `/Users/shankar/d
 
 **STATUS: APPROVED FOR COMMIT**
 
+---
+
+## [Developer & Reviewer] — 2026-11-15 12:03
+
+**Topic:** Public Launch Preparation (`v0.2.0` Release Metadata, CI/Release Workflows, `CHANGELOG.md` & `.ccx` Packaging)
+
+### Audit Scope & Verification
+1. **Package Metadata & Links:** Added canonical `"repository"`, `"bugs"`, and `"homepage"` fields across `package.json`, `packages/benday-core/package.json`, `packages/benday-cli/package.json`, and `packages/benday-ps/package.json`; added CI/Release badges and direct GitHub Releases `.ccx` download link in `README.md`.
+2. **Release Notes & GitHub Actions:** Added `CHANGELOG.md` (`v0.1.0` and `v0.2.0` notes with strict `"screens"` terminology), `.github/workflows/test.yml` (Node 20 & 22 matrix + UXP bundle verification), and `.github/workflows/release.yml` (automated `v*` tag `.ccx` build + GitHub Release creation).
+3. **Zero-Stray-Files & Test Verification:** `79/79` tests passing (`12/12` files); `packages/benday-ps/benday-v0.2.0.ccx` (`1294.4 KB`) built cleanly and `.gitignore`d; `collab/debate.md` and `docs/` (`FUTURES.md`, `SUITE-SYNERGY.md`, `HOKUSAI.md`) retained per Principal directive.
+
+`STATUS: APPROVED FOR COMMIT`
+
 [WAITING FOR PRINCIPAL]

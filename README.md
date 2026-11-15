@@ -2,6 +2,8 @@
 
 **Mesh-aware CMYK halftone engine, Photoshop UXP plugin, and CLI for screen printing**
 
+[![Tests](https://github.com/electrosaur-labs/benday/actions/workflows/test.yml/badge.svg)](https://github.com/electrosaur-labs/benday/actions/workflows/test.yml)
+[![Release](https://img.shields.io/github/v/release/electrosaur-labs/benday)](https://github.com/electrosaur-labs/benday/releases)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 Benday enhances Adobe Photoshop for 4-color process (CMYK) and single-channel halftone screen printing.
@@ -50,7 +52,7 @@ Benday is deliberately a **focused, mesh-aware halftoner**, not a replacement co
 
 ### Photoshop UXP Plugin
 
-1. Build or download `benday-v0.2.0.ccx` (see [packages/benday-ps/README.md](packages/benday-ps/README.md) for `.ccx` packaging and Adobe UXP Developer Tool setup).
+1. Download `benday-v0.2.0.ccx` from **[GitHub Releases](https://github.com/electrosaur-labs/benday/releases)**, or build it locally (see [packages/benday-ps/README.md](packages/benday-ps/README.md) for `.ccx` packaging and Adobe UXP Developer Tool setup).
 2. Double-click `benday-v0.2.0.ccx` to install via Creative Cloud Desktop.
 3. In Photoshop (`23.3.0` or later), convert your single-layer flattened artwork to your shop CMYK profile via **Edit → Convert to Profile...** (at `300–600+ DPI`).
 4. Run **Plugins → Electrosaur: Benday → Benday...**, select your SAATI `(TPI - µm)` mesh preset, Rule of N, optional **Dot Gain (`%`)**, **Crisp Type & Linework (`BVG`)**, or **Rosette Preset**, inspect the `Fit / 50% / 100% / 200%` preview (click to toggle or press-and-hold to blink `ORIGINAL`), and click **Apply Halftone**.

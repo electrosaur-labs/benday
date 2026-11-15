@@ -28,5 +28,13 @@
     "electrosaur"
   ],
   "author": "Electrosaur Labs",
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/electrosaur-labs/benday.git"
+  },
+  "bugs": {
+    "url": "https://github.com/electrosaur-labs/benday/issues"
+  },
+  "homepage": "https://github.com/electrosaur-labs/benday#readme"
 }
